@@ -9,6 +9,7 @@ import numpy as np
 import torchvision
 import logging
 
+from flcore.servers.serveravg_rul import FedAvg_RUL
 from flcore.servers.serveravg import FedAvg
 from flcore.servers.serverpFedMe import pFedMe
 from flcore.servers.serverperavg import PerAvg
@@ -183,7 +184,10 @@ def run(args):
         print(args.model)
 
         # select algorithm
-        if args.algorithm == "FedAvg":
+        if args.algorithm == "FedAvg_RUL":
+            server = FedAvg_RUL(args, i)
+
+        elif args.algorithm == "FedAvg":
             args.head = copy.deepcopy(args.model.fc)
             args.model.fc = nn.Identity()
             args.model = BaseHeadSplit(args.model, args.head)
@@ -393,7 +397,10 @@ if __name__ == "__main__":
     parser.add_argument('-dev', "--device", type=str, default="cuda",
                         choices=["cpu", "cuda"])
     parser.add_argument('-did', "--device_id", type=str, default="0")
-    parser.add_argument('-data', "--dataset", type=str, default="MNIST")
+    parser.add_argument('--dataset', type=str, default="FedCMAPSS")
+    parser.add_argument("--data_root", type=str, default="../dataset/FedCMAPSS/")
+    parser.add_argument('-t', "--task", type=str, default='A')
+    parser.add_argument('--split', type=int, default=0)
     parser.add_argument('-ncl', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model", type=str, default="CNN")
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
@@ -406,7 +413,7 @@ if __name__ == "__main__":
                         help="For auto_break")
     parser.add_argument('-ls', "--local_epochs", type=int, default=1, 
                         help="Multiple update steps in one local epoch.")
-    parser.add_argument('-algo', "--algorithm", type=str, default="FedAvg")
+    parser.add_argument('-algo', "--algorithm", type=str, default="FedAvg_RUL")
     parser.add_argument('-jr', "--join_ratio", type=float, default=1.0,
                         help="Ratio of clients per round")
     parser.add_argument('-rjr', "--random_join_ratio", type=bool, default=False,
@@ -415,7 +422,7 @@ if __name__ == "__main__":
                         help="Total number of clients")
     parser.add_argument('-pv', "--prev", type=int, default=0,
                         help="Previous Running times")
-    parser.add_argument('-t', "--times", type=int, default=1,
+    parser.add_argument("--times", type=int, default=1,
                         help="Running times")
     parser.add_argument('-eg', "--eval_gap", type=int, default=1,
                         help="Rounds gap for evaluation")

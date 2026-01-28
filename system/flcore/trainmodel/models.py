@@ -523,3 +523,51 @@ class TextCNN(nn.Module):
 #   @staticmethod
 #   def backward(ctx, grad_output):
 #     return grad_output
+
+# ====================================================================================================================
+
+class LSTM(nn.Module):
+    def __init__(self, input_size, hidden_sizes, output_size, dropout_prob=0.0):
+        """
+        LSTM model for regression.
+        
+        Args:
+            input_size (int): Number of input features
+            hidden_sizes (list[int]): List of hidden sizes for each LSTM layer
+            output_size (int): dimention of the output (1 for regression)
+            dropout_prob (float): Dropout probability
+        """
+        super().__init__()
+        
+        self.lstm_layers = nn.ModuleList()
+        
+        # Create LSTM layers
+        current_input = input_size
+        for hidden_size in hidden_sizes:
+            self.lstm_layers.append(
+                nn.LSTM(
+                    input_size=current_input,
+                    hidden_size=hidden_size,
+                    batch_first=True
+                )
+            )
+            current_input = hidden_size
+            
+        self.dropout = nn.Dropout(dropout_prob)
+        self.fc = nn.Linear(hidden_sizes[-1], output_size)
+        
+    def forward(self, x):
+        # x shape: (batch, seq_len, features)
+        out = x
+        
+        # Pass through LSTM layers
+        for lstm in self.lstm_layers:
+            out, _ = lstm(out)
+            
+        # Take the last time step output
+        # out shape after LSTM: (batch, seq_len, hidden_size)
+        out = out[:, -1, :]
+        
+        out = self.dropout(out)
+        out = self.fc(out)
+        return out
