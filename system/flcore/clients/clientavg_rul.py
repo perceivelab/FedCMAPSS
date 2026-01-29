@@ -11,15 +11,11 @@ class clientAVG_RUL(Client_RUL):
 
     def train(self):
         trainloader = self.load_train_data()
-        # self.model.to(self.device)
         self.model.train()
-        
         start_time = time.time()
-
         max_local_epochs = self.local_epochs
         if self.train_slow:
             max_local_epochs = np.random.randint(1, max_local_epochs // 2)
-
         for epoch in range(max_local_epochs):
             for i, (x, y) in enumerate(trainloader):
                 if type(x) == type([]):

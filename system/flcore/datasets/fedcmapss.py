@@ -3,25 +3,17 @@ import os
 import json
 import torch
 from torch.utils.data import Dataset
+from .rul_dataset import RULDataset
 
-class PiecewiseScaler:
-    def __init__(self, max_rul=125.0):
-        self.max_rul = max_rul
-        
-    def __call__(self, y):
-        # Clip and scale
-        if isinstance(y, torch.Tensor):
-             y_clipped = torch.clamp(y, max=self.max_rul)
-        else:
-            y_clipped = min(y, self.max_rul)
-        y_norm = y_clipped / self.max_rul
-        return y_norm
 
-    def inverse(self, y_norm):
-        # Get back to cycles
-        return y_norm * self.max_rul
-
-class FedCMAPSSDataset(Dataset):
+class FedCMAPSSDataset(RULDataset):
+    @staticmethod
+    def get_num_clients(data_root, task_id, split_id):
+        # Load splits configuration
+        with open(os.path.join(data_root, 'tasks.json'), 'r') as f:
+            tasks = json.load(f)
+        return len(tasks[str(task_id)][str(split_id)]['train'])
+    
     def __init__(self, data_root, task_id, split_id, client_id, mode='train', transform=None, target_transform=None, return_full_rul=False):
         """
         mode:
@@ -102,32 +94,44 @@ class FedCMAPSSDataset(Dataset):
             sequence = self.transform(sequence)
         if self.target_transform:
             label = self.target_transform(label)
+        # Remove NaN values if any
+        sequence = torch.nan_to_num(sequence, nan=0.0, posinf=0.0, neginf=0.0)
         return sequence, label if self.return_full_rul else label[-1]
 
-class FedCMAPSSWindowDataset(Dataset):
-    def __init__(self, dataset, window_size, stride=1):
+class FedCMAPSSWindowDataset(RULDataset):
+    def __init__(self, dataset, window_size, last_window_only=False):
         """
         Wraps a FedCMAPSSDataset to extract windows.
         """
         super().__init__()
         self.dataset = dataset
+        self.stride = 1
         self.window_size = window_size
-        self.stride = stride
+        self.last_window_only = last_window_only
         self.windows = []
         self._build_index()
 
     def _build_index(self):
-        # Process each sequence
-        for seq_idx, sequence in enumerate(self.dataset.sequences):
-            # Check length
-            seq_len = sequence.shape[0]
-            if seq_len < self.window_size:
-                continue
-            # Calculate number of windows
-            num_windows = (seq_len - self.window_size) // self.stride + 1
-            # Store window start indices
-            for i in range(num_windows):
-                start_idx = i * self.stride
+        if not self.last_window_only:
+            # Process each sequence
+            for seq_idx, sequence in enumerate(self.dataset.sequences):
+                # Check length
+                seq_len = sequence.shape[0]
+                if seq_len < self.window_size:
+                    continue
+                # Calculate number of windows
+                num_windows = (seq_len - self.window_size) // self.stride + 1
+                # Store window start indices
+                for i in range(num_windows):
+                    start_idx = i * self.stride
+                    self.windows.append((seq_idx, start_idx))
+        else:
+            # Only last window of each sequence
+            for seq_idx, sequence in enumerate(self.dataset.sequences):
+                seq_len = sequence.shape[0]
+                if seq_len < self.window_size:
+                    continue
+                start_idx = seq_len - self.window_size
                 self.windows.append((seq_idx, start_idx))
 
     def __len__(self):
@@ -146,5 +150,7 @@ class FedCMAPSSWindowDataset(Dataset):
             sequence_window = self.dataset.transform(sequence_window)
         if self.dataset.target_transform:
             label_window = self.dataset.target_transform(label_window)
+        # Remove NaN values if any
+        sequence_window = torch.nan_to_num(sequence_window, nan=0.0, posinf=0.0, neginf=0.0)
         # Return
         return sequence_window, label_window if self.dataset.return_full_rul else label_window[-1]

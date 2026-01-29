@@ -58,6 +58,9 @@ from flcore.trainmodel.resnet import *
 from flcore.trainmodel.alexnet import *
 from flcore.trainmodel.mobilenet_v2 import *
 from flcore.trainmodel.transformer import *
+from flcore.trainmodel.rul_model_factory import RULModelFactory
+
+from flcore.datasets.rul_dataset_factory import RULDatasetFactory
 
 from utils.result_utils import average_data
 from utils.mem_utils import MemReporter
@@ -81,7 +84,18 @@ def run(args):
         start = time.time()
 
         # Generate args.model
-        if model_str == "MLR": # convex
+
+        if model_str.endswith("_RUL"):
+            # Get input size for RUL models
+            args.input_size = RULDatasetFactory.get_input_size(
+                dataset_name=args.dataset,
+                data_root=args.data_root,
+                task_id=args.task,
+                split_id=args.split
+            )
+            args.model = RULModelFactory.create_model(args).to(args.device)
+
+        elif model_str == "MLR": # convex
             if "MNIST" in args.dataset:
                 args.model = Mclr_Logistic(1*28*28, num_classes=args.num_classes).to(args.device)
             elif "Cifar10" in args.dataset:
@@ -397,12 +411,14 @@ if __name__ == "__main__":
     parser.add_argument('-dev', "--device", type=str, default="cuda",
                         choices=["cpu", "cuda"])
     parser.add_argument('-did', "--device_id", type=str, default="0")
-    parser.add_argument('--dataset', type=str, default="FedCMAPSS")
+    parser.add_argument('--dataset', type=str, default="FedCMAPSSWindow")
     parser.add_argument("--data_root", type=str, default="../dataset/FedCMAPSS/")
     parser.add_argument('-t', "--task", type=str, default='A')
     parser.add_argument('--split', type=int, default=0)
+    parser.add_argument('--max-rul', type=int, default=125)
+    parser.add_argument('--window-size', type=int, default=30)
     parser.add_argument('-ncl', "--num_classes", type=int, default=10)
-    parser.add_argument('-m', "--model", type=str, default="CNN")
+    parser.add_argument('-m', "--model", type=str, default="LSTM_RUL")
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
     parser.add_argument('-lr', "--local_learning_rate", type=float, default=0.005,
                         help="Local learning rate")

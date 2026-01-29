@@ -538,9 +538,7 @@ class LSTM(nn.Module):
             dropout_prob (float): Dropout probability
         """
         super().__init__()
-        
         self.lstm_layers = nn.ModuleList()
-        
         # Create LSTM layers
         current_input = input_size
         for hidden_size in hidden_sizes:
@@ -552,7 +550,6 @@ class LSTM(nn.Module):
                 )
             )
             current_input = hidden_size
-            
         self.dropout = nn.Dropout(dropout_prob)
         self.fc = nn.Linear(hidden_sizes[-1], output_size)
         

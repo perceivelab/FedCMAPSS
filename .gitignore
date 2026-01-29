@@ -5,3 +5,4 @@
 dataset/FedCMAPSS/cmapss_processed_test_data.csv
 dataset/FedCMAPSS/cmapss_processed_train_data.csv
 dataset/FedCMAPSS/tasks.json
+private/dataset/

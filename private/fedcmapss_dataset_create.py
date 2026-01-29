@@ -6,8 +6,9 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 # Configuration
-SOURCE_DATASET_DIR='dataset'
+SOURCE_DATASET_DIR='private/dataset'
 OUTPUT_DIR = 'output'
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Will contain:
 # - cmapss_processed_train_data.csv
 # - cmapss_processed_test_data.csv
