@@ -78,6 +78,16 @@ def run(args):
     reporter = MemReporter()
     model_str = args.model
 
+    # Create results directories
+    run_name = f"{args.dataset}_{args.algorithm}_{args.model}_{args.task}_{args.split}_{time.strftime('%Y%m%d-%H%M%S')}"
+    args.results_root = os.path.join(args.results_root, run_name)
+    args.metrics_root = os.path.join(args.results_root, 'metrics')
+    args.model_root = os.path.join(args.results_root, 'model')
+    os.makedirs(args.metrics_root, exist_ok=True)
+    os.makedirs(args.model_root, exist_ok=True)
+    # Store args
+    torch.save(args, os.path.join(args.results_root, 'args.pt'))
+
     for i in range(args.prev, args.times):
         print(f"\n============= Running time: {i}th =============")
         print("Creating server and clients ...")
@@ -417,6 +427,7 @@ if __name__ == "__main__":
     parser.add_argument('--split', type=int, default=0)
     parser.add_argument('--max-rul', type=int, default=125)
     parser.add_argument('--window-size', type=int, default=30)
+    parser.add_argument('--results-root', type=str, default="../results")
     parser.add_argument('-ncl', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model", type=str, default="LSTM_RUL")
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)

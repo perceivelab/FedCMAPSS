@@ -65,7 +65,7 @@ class Client_RUL(Client):
         testloaderfull = self.load_test_data()
         self.model.eval()
         test_num = 0
-        mse = 0
+        sse = 0
         nasa_score = 0
         with torch.no_grad():
             for x, y in testloaderfull:
@@ -77,17 +77,16 @@ class Client_RUL(Client):
                 output = self.model(x)
                 # Invert prediction (label should be in original scale)
                 output = piecewise_scaler.inverse(output.detach())
-                # Update MSE
-                mse += nn.MSELoss(reduction='sum')(output, y).item()
+                # Update SSE
+                sse += nn.MSELoss(reduction='sum')(output, y).item()
                 test_num += y.shape[0]
                 # Update NASA score
                 nasa_score += compute_nasa_score(y, output)
-        # self.model.cpu()
-        # self.save_model(self.model, 'model')
         # Compute average metrics
-        rmse = np.sqrt(mse / test_num)
+        rmse = np.sqrt(sse / test_num)
         return {
             'rmse': rmse,
+            'sse': sse,
             'nasa_score': nasa_score,
             'num_samples': test_num
         }
@@ -100,7 +99,7 @@ class Client_RUL(Client):
         self.model.eval()
         train_num = 0
         mse_loss = 0
-        rmse = 0
+        sse = 0
         nasa_score = 0
         with torch.no_grad():
             for x, y in trainloader:
@@ -116,23 +115,20 @@ class Client_RUL(Client):
                 # Invert prediction and label
                 output = piecewise_scaler.inverse(output.detach())
                 y = piecewise_scaler.inverse(y)
-                # Update RMSE
-                rmse += nn.MSELoss(reduction='sum')(output, y).item()
+                # Update SSE
+                sse += nn.MSELoss(reduction='sum')(output, y).item()
                 # Update NASA score
                 nasa_score += compute_nasa_score(y, output)
-        # self.model.cpu()
-        # self.save_model(self.model, 'model')
-        # Compute average metrics
-        rmse = np.sqrt(mse_loss / train_num)
+        # Compute cumulative metrics
+        rmse = np.sqrt(sse / train_num)
         mse_loss = mse_loss / train_num
         return {
             'mse_loss': mse_loss,
             'rmse': rmse,
+            'sse': sse,
             'nasa_score': nasa_score,
             'num_samples': train_num
         }
-        # self.model = self.load_model('model')
-        # self.model.to(self.device)
 
     def save_item(self, item, item_name, item_path=None):
         if item_path == None:

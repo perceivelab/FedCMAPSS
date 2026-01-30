@@ -29,14 +29,11 @@ class FedAvg_RUL(Server_RUL):
                 print(f"\n-------------Round number: {i}-------------")
                 print("\nEvaluate global model")
                 self.evaluate()
+                self.save_results(i)
+                self.save_models(i)
 
             for client in self.selected_clients:
                 client.train()
-
-            # threads = [Thread(target=client.train)
-            #            for client in self.selected_clients]
-            # [t.start() for t in threads]
-            # [t.join() for t in threads]
 
             self.receive_models()
             if self.dlg_eval and i%self.dlg_gap == 0:
@@ -51,9 +48,6 @@ class FedAvg_RUL(Server_RUL):
 
         print("\nAverage time cost per round.")
         print(sum(self.Budget[1:])/len(self.Budget[1:]))
-
-        self.save_results()
-        self.save_global_model()
 
         if self.num_new_clients > 0:
             self.eval_new_clients = True

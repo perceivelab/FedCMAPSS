@@ -21,6 +21,7 @@ class Server_RUL(Server):
         )
         args.num_clients = num_clients
         super().__init__(args, times)
+        self.results_history = []
 
     def set_clients(self, clientObj):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
@@ -50,12 +51,13 @@ class Server_RUL(Server):
             self.fine_tuning_new_clients()
             return self.test_metrics_new_clients()
         # Gather metrics from all clients
-        client_metrics = {'num_samples': [], 'rmse': [], 'nasa_score': [], 'client_ids': []}
+        client_metrics = {'num_samples': [], 'rmse': [], 'sse': [], 'nasa_score': [], 'client_ids': []}
         for c in self.clients:
             metrics = c.test_metrics()
             client_metrics['client_ids'].append(c.id)
             client_metrics['num_samples'].append(metrics['num_samples'])
-            client_metrics['rmse'].append(metrics['rmse']*metrics['num_samples'])
+            client_metrics['rmse'].append(metrics['rmse'])
+            client_metrics['sse'].append(metrics['sse'])
             client_metrics['nasa_score'].append(metrics['nasa_score'])
         return client_metrics
 
@@ -63,38 +65,66 @@ class Server_RUL(Server):
         if self.eval_new_clients and self.num_new_clients > 0:
             return [0], [1], [0]
         # Gather metrics from all clients
-        client_metrics = {'num_samples': [], 'mse_loss': [], 'rmse': [], 'nasa_score': [], 'client_ids': []}
+        client_metrics = {'num_samples': [], 'mse_loss': [], 'weighted_mse_loss': [], 'sse': [], 'rmse': [], 'nasa_score': [], 'client_ids': []}
         for c in self.clients:
             metrics = c.train_metrics()
             client_metrics['client_ids'].append(c.id)
             client_metrics['num_samples'].append(metrics['num_samples'])
-            client_metrics['mse_loss'].append(metrics['mse_loss'])
-            client_metrics['rmse'].append(metrics['rmse']*metrics['num_samples'])
-            client_metrics['nasa_score'].append(metrics['nasa_score'])
+            client_metrics['mse_loss'].append(metrics['mse_loss'])  # Will not be averaged directly, to be used as a local metric
+            client_metrics['weighted_mse_loss'].append(metrics['mse_loss'] * metrics['num_samples'])  # Used for weighted sum later
+            client_metrics['rmse'].append(metrics['rmse']) # Will not be averaged directly, to be used as a local metric
+            client_metrics['sse'].append(metrics['sse']) # Cumulative SSE
+            client_metrics['nasa_score'].append(metrics['nasa_score']) # Cumulative NASA score
         return client_metrics
         
     # evaluate selected clients
-    def evaluate(self, acc=None, loss=None):
+    def evaluate(self):
+        # Compute local stats
         stats = self.test_metrics()
         stats_train = self.train_metrics()
-        # Compute averaged metrics
-        train_mse_loss = sum(stats_train['mse_loss']) * 1.0 / sum(stats_train['num_samples'])
-        train_rmse = sum(stats_train['rmse']) * 1.0 / sum(stats_train['num_samples'])
-        train_nasa_score = sum(stats_train['nasa_score'])
-        test_rmse = sum(stats['rmse']) * 1.0 / sum(stats['num_samples'])
-        test_nasa_score = sum(stats['nasa_score'])
+        # Compute global metrics
+        global_stats = {}
+        global_stats['train_mse_loss'] = sum(stats_train['weighted_mse_loss']) / sum(stats_train['num_samples']) # Weighted average by number of samples
+        global_stats['train_rmse'] = np.sqrt(sum(stats_train['sse']) / sum(stats_train['num_samples'])) # RMSE from cumulative SSE
+        global_stats['train_nasa_score'] = sum(stats_train['nasa_score'])
+        global_stats['test_rmse'] = np.sqrt(sum(stats['sse']) / sum(stats['num_samples'])) # RMSE from cumulative SSE
+        global_stats['test_nasa_score'] = sum(stats['nasa_score'])
+        # Save results
+        self.results_history.append({
+            'global_stats': global_stats,
+            'local_stats_test': stats,
+            'local_stats_train': stats_train
+        })
 
-        print("Averaged Train Loss: {:.4f}".format(train_mse_loss))
-        print("Averaged Train RMSE: {:.4f}".format(train_rmse))
-        print("Averaged Train NASA Score: {:.4f}".format(train_nasa_score))
-        print("Averaged Test RMSE: {:.4f}".format(test_rmse))
-        print("Averaged Test NASA Score: {:.4f}".format(test_nasa_score))
-        # self.print_(test_acc, train_acc, train_loss)
-        #print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
-        #print("Std Test AUC: {:.4f}".format(np.std(aucs)))
+        # Print global results
+        print("Global Train Loss: {:.4f}".format(global_stats['train_mse_loss']))
+        print("Global Train RMSE: {:.4f}".format(global_stats['train_rmse']))
+        print("Global Train NASA Score: {:.4f}".format(global_stats['train_nasa_score']))
+        print("Global Test RMSE: {:.4f}".format(global_stats['test_rmse']))
+        print("Global Test NASA Score: {:.4f}".format(global_stats['test_nasa_score']))
+        # Print per-client results
+        print("\nDetailed per-client results:\n")
+        for i in range(self.num_clients):
+            print(f"Client {stats['client_ids'][i]}")
+            print("  Train Loss: {:.4f}".format(stats_train['mse_loss'][i]))
+            print("  Train RMSE: {:.4f}".format(stats_train['rmse'][i]))
+            print("  Train NASA Score: {:.4f}".format(stats_train['nasa_score'][i]))
+            print("  Test RMSE: {:.4f}".format(stats['rmse'][i]))
+            print("  Test NASA Score: {:.4f}\n".format(stats['nasa_score'][i]))
+            print("")
 
-    # TODO fix this
-    def print_(self, test_acc, test_auc, train_loss):
-        print("Average Test Accuracy: {:.4f}".format(test_acc))
-        print("Average Test AUC: {:.4f}".format(test_auc))
-        print("Average Train Loss: {:.4f}".format(train_loss))
+        # TODO add standard deviation
+    
+    def save_results(self, round):
+        # Save results history to a file
+        results_path = os.path.join(self.args.metrics_root, f'metrics_round_{round}.pt')
+        torch.save(self.results_history, results_path)
+
+    def save_models(self, round):
+        # Save global model to a file
+        model_path = os.path.join(self.args.model_root, f'global_model_round_{round}.pt')
+        torch.save(self.global_model.state_dict(), model_path)
+        # Save each client model to a file
+        for client in self.clients:
+            client_model_path = os.path.join(self.args.model_root, f'client_{client.id}_model_round_{round}.pt')
+            torch.save(client.model.state_dict(), client_model_path)
