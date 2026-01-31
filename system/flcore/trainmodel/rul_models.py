@@ -1,7 +1,3 @@
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import Tuple, Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -31,7 +27,6 @@ class AFTBlock(nn.Module):
         context = (w * V.unsqueeze(1)).sum(dim=2) / (w.sum(dim=2) + 1e-8)     # [B,T,D]
 
         return rQ * context  # [B,T,D]
-
 
 class AFTConv2D(nn.Module):
     def __init__(self, window_size=30, input_size=25):
@@ -186,3 +181,157 @@ class AttBiGRU(nn.Module):
         y = self.drop2(y)
 
         return y.squeeze(-1)
+
+
+# -----------------------------
+# 4) Barbosa et al. (2025): LSTM_v2_RUL
+#    Using Federated Machine Learning in Predictive Maintenance of Jet Engines
+# -----------------------------
+class GaussianNoise(nn.Module):
+    def __init__(self, std: float = 0.01):
+        super().__init__()
+        self.std = std
+
+    def forward(self, x):
+        if self.training and self.std > 0:
+            return x + torch.randn_like(x) * self.std
+        return x
+
+class VariationalDropout(nn.Module):
+    """
+    Dropout with a time-locked (variational) mask.
+    The same dropout mask is reused across all time steps.
+    Used here to approximate "recurrent dropout" in an LSTMCell loop.
+    """
+    def __init__(self, p: float):
+        super().__init__()
+        self.p = p
+
+    def forward(self, h):
+        if (not self.training) or self.p <= 0:
+            return h
+        keep = 1.0 - self.p
+        mask = torch.empty_like(h).bernoulli_(keep) / keep
+        return h * mask
+
+class StackedLSTMCell(nn.Module):
+    """
+    Implements a multi-layer LSTM using LSTMCell, with recurrent dropout applied to h_t.
+    Input:  x of shape (B, T, D)
+    Output: last_h of shape (B, H), i.e., the hidden state of the last layer at the final time step.
+    """
+    def __init__(self, input_dim: int, hidden_dim: int = 64, num_layers: int = 4,
+                 layer_dropout: float = 0.1, recurrent_dropout: float = 0.2):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+
+        self.cells = nn.ModuleList()
+        for i in range(num_layers):
+            in_dim = input_dim if i == 0 else hidden_dim
+            self.cells.append(nn.LSTMCell(in_dim, hidden_dim))
+
+        self.inter_layer_dropout = nn.Dropout(layer_dropout)
+        self.rec_dropout = VariationalDropout(recurrent_dropout)
+
+    def forward(self, x):
+        B, T, D = x.shape
+
+        h = [x.new_zeros(B, self.hidden_dim) for _ in range(self.num_layers)]
+        c = [x.new_zeros(B, self.hidden_dim) for _ in range(self.num_layers)]
+
+        for t in range(T):
+            inp = x[:, t, :]
+            for l, cell in enumerate(self.cells):
+                h[l], c[l] = cell(inp, (h[l], c[l]))
+                h[l] = self.rec_dropout(h[l])
+                inp = h[l] if l == self.num_layers - 1 else self.inter_layer_dropout(h[l])
+
+        return h[-1]  # (B, H)
+
+class LSTM_v2_RUL(nn.Module):
+    """
+    RUL model: Gaussian noise + stacked LSTM + dense stack + output.
+    Predicts a single RUL value per input window (many-to-one).
+    """
+    def __init__(
+        self,
+        input_size: int,
+        lstm_layers: int = 4,
+        dense_layers: int = 4,
+        units: int = 64,
+        layer_dropout: float = 0.1,
+        recurrent_dropout: float = 0.2,
+        gaussian_noise: float = 0.01,
+    ):
+        super().__init__()
+        self.noise = GaussianNoise(std=gaussian_noise)
+
+        self.rnn = StackedLSTMCell(
+            input_dim=input_size,
+            hidden_dim=units,
+            num_layers=lstm_layers,
+            layer_dropout=layer_dropout,
+            recurrent_dropout=recurrent_dropout,
+        )
+
+        mlp = []
+        in_dim = units
+        for _ in range(dense_layers):
+            mlp += [
+                nn.Linear(in_dim, units),
+                nn.ReLU(),
+                nn.Dropout(layer_dropout),
+            ]
+            in_dim = units
+        mlp += [nn.Linear(in_dim, 1)]
+        self.mlp = nn.Sequential(*mlp)
+
+    def forward(self, x):
+        """
+        x: (B, T, D)  with T = ws/sequence length
+        """
+        x = self.noise(x)
+        h_last = self.rnn(x)
+        y = self.mlp(h_last).squeeze(-1)
+        return y
+
+
+# -----------------------------
+# 5) Chen et al. (2023): RNN_RUL
+#    A remaining useful life estimation method based on long short-term memory
+#    and federated learning for electric vehicles in smart cities
+# -----------------------------
+class RNN_RUL(nn.Module):
+    """
+    Chen et al. (2023) RNN model:
+      SimpleRNN layers with units: 64 -> 32 -> 16 -> 8 -> 4 (ReLU),
+      then 2 fully-connected layers -> output 1 (RUL).
+
+    Input:  x (B, T, 16)  where T=100 in the paper setup (sliding window size).
+    Output: y (B, 1)
+    """
+    def __init__(self, input_size: int = 16, fc_hidden: int = 40):
+        super().__init__()
+
+        self.rnn1 = nn.RNN(input_size, 64, nonlinearity="relu", batch_first=True)
+        self.rnn2 = nn.RNN(64, 32, nonlinearity="relu", batch_first=True)
+        self.rnn3 = nn.RNN(32, 16, nonlinearity="relu", batch_first=True)
+        self.rnn4 = nn.RNN(16, 8, nonlinearity="relu", batch_first=True)
+        self.rnn5 = nn.RNN(8, 4, nonlinearity="relu", batch_first=True)
+
+        self.fc1 = nn.Linear(4, fc_hidden)
+        self.fc2 = nn.Linear(fc_hidden, 1)
+
+    def forward(self, x):
+        x, _ = self.rnn1(x)
+        x, _ = self.rnn2(x)
+        x, _ = self.rnn3(x)
+        x, _ = self.rnn4(x)
+        x, _ = self.rnn5(x)
+
+        h_last = x[:, -1, :]
+
+        y = F.relu(self.fc1(h_last))
+        y = self.fc2(y)
+        return y
