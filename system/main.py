@@ -88,6 +88,36 @@ def run(args):
     # Store args
     torch.save(args, os.path.join(args.results_root, 'args.pt'))
 
+    # Optional Weights & Biases logging
+    args.wandb_run = None
+    if args.wandb_log:
+        try:
+            import wandb
+            args.wandb_run = wandb.init(
+                project=args.wandb_project or "rocketfl",
+                entity=args.wandb_entity,
+                name=args.wandb_run_name or run_name,
+                group=args.wandb_group,
+                tags=args.wandb_tags,
+                config={
+                    "dataset": args.dataset,
+                    "algorithm": args.algorithm,
+                    "model": args.model,
+                    "task": args.task,
+                    "split": args.split,
+                    "num_clients": args.num_clients,
+                    "global_rounds": args.global_rounds,
+                    "batch_size": args.batch_size,
+                    "learning_rate": args.local_learning_rate,
+                },
+            )
+        except ImportError:
+            print("wandb is not installed; disabling wandb logging.")
+            args.wandb_log = False
+        except Exception as exc:
+            print(f"wandb initialization failed ({exc}); disabling wandb logging.")
+            args.wandb_log = False
+
     for i in range(args.prev, args.times):
         print(f"\n============= Running time: {i}th =============")
         print("Creating server and clients ...")
@@ -403,6 +433,8 @@ def run(args):
     print(f"\nAverage time cost: {round(np.average(time_list), 2)}s.")
     
     #reporter.report()
+    if args.wandb_run is not None:
+        args.wandb_run.finish()
 
 
 if __name__ == "__main__":
@@ -525,6 +557,20 @@ if __name__ == "__main__":
     parser.add_argument('-fsb', "--first_stage_bound", type=int, default=0)
     parser.add_argument('-ca', "--fedcross_alpha", type=float, default=0.99)
     parser.add_argument('-cmss', "--collaberative_model_select_strategy", type=int, default=1)
+
+    # Weights & Biases logging (disabled by default)
+    parser.add_argument('--wandb-log', action='store_true',
+                        help="Enable wandb experiment logging (default: off)")
+    parser.add_argument('--wandb-entity', type=str, default=None,
+                        help="wandb entity/user name")
+    parser.add_argument('--wandb-project', type=str, default=None,
+                        help="wandb project name")
+    parser.add_argument('--wandb-run-name', type=str, default=None,
+                        help="Optional wandb run name override")
+    parser.add_argument('--wandb-group', type=str, default=None,
+                        help="Optional wandb group name")
+    parser.add_argument('--wandb-tags', type=str, nargs='*', default=None,
+                        help="Optional list of wandb tags")
 
 
     args = parser.parse_args()

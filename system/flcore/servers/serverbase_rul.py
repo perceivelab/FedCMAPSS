@@ -78,7 +78,7 @@ class Server_RUL(Server):
         return client_metrics
         
     # evaluate selected clients
-    def evaluate(self):
+    def evaluate(self, round_idx=None):
         # Compute local stats
         stats = self.test_metrics()
         stats_train = self.train_metrics()
@@ -114,6 +114,63 @@ class Server_RUL(Server):
             print("")
 
         # TODO add standard deviation
+        self.log_wandb_metrics(global_stats, stats, stats_train, round_idx)
+
+    def log_wandb_metrics(self, global_stats, stats_test, stats_train, round_idx):
+        wandb_run = getattr(self.args, "wandb_run", None)
+        if wandb_run is None:
+            return
+        try:
+            import wandb
+        except ImportError:
+            return
+
+        log_step = round_idx if round_idx is not None else len(self.results_history) - 1
+        log_payload = {
+            "global/train_loss": global_stats['train_mse_loss'],
+            "global/train_rmse": global_stats['train_rmse'],
+            "global/train_nasa_score": global_stats['train_nasa_score'],
+            "global/test_rmse": global_stats['test_rmse'],
+            "global/test_nasa_score": global_stats['test_nasa_score'],
+            "round": round_idx,
+        }
+
+        client_table = wandb.Table(
+            columns=[
+                "client_id",
+                "train_loss",
+                "train_rmse",
+                "train_nasa_score",
+                "test_rmse",
+                "test_nasa_score",
+            ]
+        )
+        for client_id, train_loss, train_rmse, train_nasa, test_rmse, test_nasa in zip(
+            stats_train['client_ids'],
+            stats_train['mse_loss'],
+            stats_train['rmse'],
+            stats_train['nasa_score'],
+            stats_test['rmse'],
+            stats_test['nasa_score'],
+        ):
+            client_table.add_data(
+                int(client_id),
+                float(train_loss),
+                float(train_rmse),
+                float(train_nasa),
+                float(test_rmse),
+                float(test_nasa),
+            )
+            # Also log flattened per-client metrics for quick charting
+            prefix = f"clients/{client_id}"
+            log_payload[f"{prefix}/train_loss"] = train_loss
+            log_payload[f"{prefix}/train_rmse"] = train_rmse
+            log_payload[f"{prefix}/train_nasa_score"] = train_nasa
+            log_payload[f"{prefix}/test_rmse"] = test_rmse
+            log_payload[f"{prefix}/test_nasa_score"] = test_nasa
+
+        log_payload["clients/metrics_table"] = client_table
+        wandb_run.log(log_payload, step=log_step)
     
     def save_results(self, round):
         # Save results history to a file

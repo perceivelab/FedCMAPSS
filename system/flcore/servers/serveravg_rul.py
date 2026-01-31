@@ -28,7 +28,7 @@ class FedAvg_RUL(Server_RUL):
             if i%self.eval_gap == 0:
                 print(f"\n-------------Round number: {i}-------------")
                 print("\nEvaluate global model")
-                self.evaluate()
+                self.evaluate(round_idx=i)
                 self.save_results(i)
                 self.save_models(i)
 
@@ -54,4 +54,4 @@ class FedAvg_RUL(Server_RUL):
             self.set_new_clients(clientAVG_RUL)
             print(f"\n-------------Fine tuning round-------------")
             print("\nEvaluate new clients")
-            self.evaluate()
+            self.evaluate(round_idx=self.global_rounds + 1)
