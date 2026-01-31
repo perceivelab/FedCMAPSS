@@ -452,7 +452,8 @@ if __name__ == "__main__":
                         help="The goal for this experiment")
     parser.add_argument('-dev', "--device", type=str, default="cuda",
                         choices=["cpu", "cuda"])
-    parser.add_argument('-did', "--device_id", type=str, default="0")
+    # If CUDA_VISIBLE_DEVICES is already set externally, keep it unless user overrides with --device_id
+    parser.add_argument('-did', "--device_id", type=str, default=None)
     parser.add_argument('--dataset', type=str, default="FedCMAPSSWindow")
     parser.add_argument("--data_root", type=str, default="../dataset/FedCMAPSS/")
     parser.add_argument('-t', "--task", type=str, default='A')
@@ -582,7 +583,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.device_id
+    # Resolve which CUDA device(s) to use: CLI flag takes priority, otherwise honor existing env, else default to "0"
+    resolved_device_id = args.device_id if args.device_id is not None else os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+    os.environ["CUDA_VISIBLE_DEVICES"] = resolved_device_id
+    args.device_id = resolved_device_id
 
     if args.device == "cuda" and not torch.cuda.is_available():
         print("\ncuda is not avaiable.\n")
