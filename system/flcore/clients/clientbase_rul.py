@@ -65,6 +65,7 @@ class Client_RUL(Client):
         testloaderfull = self.load_test_data()
         self.model.eval()
         test_num = 0
+        mse_loss = 0
         sse = 0
         nasa_score = 0
         with torch.no_grad():
@@ -75,16 +76,25 @@ class Client_RUL(Client):
                     x = x.to(self.device)
                 y = y.to(self.device)
                 output = self.model(x)
-                # Invert prediction (label should be in original scale)
+
+                # Update MSE loss (normalized)
+                mse_loss += nn.MSELoss(reduction='sum')(output, y).item()
+                test_num += y.shape[0]
+
+                # Invert prediction and label for other metrics
                 output = piecewise_scaler.inverse(output.detach())
+                y = piecewise_scaler.inverse(y)
+
                 # Update SSE
                 sse += nn.MSELoss(reduction='sum')(output, y).item()
-                test_num += y.shape[0]
                 # Update NASA score
                 nasa_score += compute_nasa_score(y, output)
+        
         # Compute average metrics
         rmse = np.sqrt(sse / test_num)
+        mse_loss = mse_loss / test_num
         return {
+            'mse_loss': mse_loss,
             'rmse': rmse,
             'sse': sse,
             'nasa_score': nasa_score,

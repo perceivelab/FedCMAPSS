@@ -51,11 +51,13 @@ class Server_RUL(Server):
             self.fine_tuning_new_clients()
             return self.test_metrics_new_clients()
         # Gather metrics from all clients
-        client_metrics = {'num_samples': [], 'rmse': [], 'sse': [], 'nasa_score': [], 'client_ids': []}
+        client_metrics = {'num_samples': [], 'mse_loss': [], 'weighted_mse_loss': [], 'sse': [], 'rmse': [], 'nasa_score': [], 'client_ids': []}
         for c in self.clients:
             metrics = c.test_metrics()
             client_metrics['client_ids'].append(c.id)
             client_metrics['num_samples'].append(metrics['num_samples'])
+            client_metrics['mse_loss'].append(metrics['mse_loss'])  # Will not be averaged directly, to be used as a local metric
+            client_metrics['weighted_mse_loss'].append(metrics['mse_loss'] * metrics['num_samples'])  # Used for weighted sum later
             client_metrics['rmse'].append(metrics['rmse'])
             client_metrics['sse'].append(metrics['sse'])
             client_metrics['nasa_score'].append(metrics['nasa_score'])
@@ -87,6 +89,7 @@ class Server_RUL(Server):
         global_stats['train_mse_loss'] = sum(stats_train['weighted_mse_loss']) / sum(stats_train['num_samples']) # Weighted average by number of samples
         global_stats['train_rmse'] = np.sqrt(sum(stats_train['sse']) / sum(stats_train['num_samples'])) # RMSE from cumulative SSE
         global_stats['train_nasa_score'] = sum(stats_train['nasa_score'])
+        global_stats['test_mse_loss'] = sum(stats['weighted_mse_loss']) / sum(stats['num_samples']) # Weighted average by number of samples
         global_stats['test_rmse'] = np.sqrt(sum(stats['sse']) / sum(stats['num_samples'])) # RMSE from cumulative SSE
         global_stats['test_nasa_score'] = sum(stats['nasa_score'])
         # Save results
@@ -100,6 +103,7 @@ class Server_RUL(Server):
         print("Global Train Loss: {:.4f}".format(global_stats['train_mse_loss']))
         print("Global Train RMSE: {:.4f}".format(global_stats['train_rmse']))
         print("Global Train NASA Score: {:.4f}".format(global_stats['train_nasa_score']))
+        print("Global Test Loss: {:.4f}".format(global_stats['test_mse_loss']))
         print("Global Test RMSE: {:.4f}".format(global_stats['test_rmse']))
         print("Global Test NASA Score: {:.4f}".format(global_stats['test_nasa_score']))
         # Print per-client results
@@ -109,6 +113,7 @@ class Server_RUL(Server):
             print("  Train Loss: {:.4f}".format(stats_train['mse_loss'][i]))
             print("  Train RMSE: {:.4f}".format(stats_train['rmse'][i]))
             print("  Train NASA Score: {:.4f}".format(stats_train['nasa_score'][i]))
+            print("  Test Loss: {:.4f}".format(stats['mse_loss'][i]))
             print("  Test RMSE: {:.4f}".format(stats['rmse'][i]))
             print("  Test NASA Score: {:.4f}\n".format(stats['nasa_score'][i]))
             print("")
@@ -130,6 +135,7 @@ class Server_RUL(Server):
             "global/train_loss": global_stats['train_mse_loss'],
             "global/train_rmse": global_stats['train_rmse'],
             "global/train_nasa_score": global_stats['train_nasa_score'],
+            "global/test_loss": global_stats['test_mse_loss'],
             "global/test_rmse": global_stats['test_rmse'],
             "global/test_nasa_score": global_stats['test_nasa_score'],
             "round": round_idx,
@@ -141,15 +147,17 @@ class Server_RUL(Server):
                 "train_loss",
                 "train_rmse",
                 "train_nasa_score",
+                "test_loss",
                 "test_rmse",
                 "test_nasa_score",
             ]
         )
-        for client_id, train_loss, train_rmse, train_nasa, test_rmse, test_nasa in zip(
+        for client_id, train_loss, train_rmse, train_nasa, test_loss, test_rmse, test_nasa in zip(
             stats_train['client_ids'],
             stats_train['mse_loss'],
             stats_train['rmse'],
             stats_train['nasa_score'],
+            stats_test['mse_loss'],
             stats_test['rmse'],
             stats_test['nasa_score'],
         ):
@@ -158,6 +166,7 @@ class Server_RUL(Server):
                 float(train_loss),
                 float(train_rmse),
                 float(train_nasa),
+                float(test_loss),
                 float(test_rmse),
                 float(test_nasa),
             )
@@ -166,6 +175,7 @@ class Server_RUL(Server):
             log_payload[f"{prefix}/train_loss"] = train_loss
             log_payload[f"{prefix}/train_rmse"] = train_rmse
             log_payload[f"{prefix}/train_nasa_score"] = train_nasa
+            log_payload[f"{prefix}/test_loss"] = test_loss
             log_payload[f"{prefix}/test_rmse"] = test_rmse
             log_payload[f"{prefix}/test_nasa_score"] = test_nasa
 

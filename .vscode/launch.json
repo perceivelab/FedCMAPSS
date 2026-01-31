@@ -28,6 +28,15 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/system",
             "args": ["-gr", "1"]
+        },
+        {
+            "name": "main_centralized_quick",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/system/main.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/system",
+            "args": ["-gr", "1", "--centralized", "--algorithm", "Centralized_RUL"]
         }
     ]
 }

@@ -1,5 +1,6 @@
 from .fedcmapss import FedCMAPSSDataset, FedCMAPSSWindowDataset
 from flcore.datasets.rul_utils import PiecewiseScaler
+import copy
 
 class RULDatasetFactory:
     @staticmethod
@@ -22,9 +23,42 @@ class RULDatasetFactory:
         
     @staticmethod
     def create_dataset(dataset_name, mode, client_id, args):
-        if dataset_name == "FedCMAPSS":
+        if dataset_name == "FedCMAPSS" and args.centralized:
+            # Get number of clients
+            num_clients = FedCMAPSSDataset.get_num_clients(args.data_root, args.task, args.split)
+            # Create training dataset using create_dataset for first client to get stats
+            local_args = copy.deepcopy(args)
+            local_args.centralized = False
+            train_dataset = RULDatasetFactory.create_dataset(dataset_name, 'train', 0, local_args)
+            # Create datasets for other clients and concatenate sequences and labels
+            for cid in range(1, num_clients):
+                other_dataset = RULDatasetFactory.create_dataset(dataset_name, 'train', cid, local_args)
+                train_dataset.sequences.extend(other_dataset.sequences)
+                train_dataset.labels.extend(other_dataset.labels)
+            # Get stats
+            mean, std = train_dataset.stats()
+            # Create transforms
+            train_dataset.transform = lambda x: (x - mean) / std
+            train_dataset.target_transform = PiecewiseScaler(max_rul=args.max_rul)
+            # If mode is training, return the dataset
+            if mode == 'train':
+                return train_dataset
+            # Create dataset for specified mode
+            # Create dataset of first client
+            dataset = RULDatasetFactory.create_dataset(dataset_name, mode, 0, local_args)
+            # Concatenate datasets of other clients
+            for cid in range(1, num_clients):
+                other_dataset = RULDatasetFactory.create_dataset(dataset_name, mode, cid, local_args)
+                dataset.sequences.extend(other_dataset.sequences)
+                dataset.labels.extend(other_dataset.labels)
+            # Set transforms
+            dataset.transform = train_dataset.transform
+            dataset.target_transform = train_dataset.target_transform
+            # Return dataset
+            return dataset
+        elif dataset_name == "FedCMAPSS": # not centralized
             # Create training dataset first to get stats
-            dataset = FedCMAPSSDataset(
+            train_dataset = FedCMAPSSDataset(
                 data_root=args.data_root,
                 task_id=args.task,
                 split_id=args.split,
@@ -32,21 +66,23 @@ class RULDatasetFactory:
                 mode='train'
             )
             # Get stats
-            mean, std = dataset.stats()
+            mean, std = train_dataset.stats()
             # Create transforms
-            dataset.transform = lambda x: (x - mean) / std
-            dataset.target_transform = PiecewiseScaler(max_rul=args.max_rul)
-            # Check mode and recreate dataset if needed
-            if mode != 'train':
-                dataset = FedCMAPSSDataset(
-                    data_root=args.data_root,
-                    task_id=args.task,
-                    split_id=args.split,
-                    client_id=client_id,
-                    mode=mode,
-                    transform=dataset.transform
-                    # No target_transform for test/test_full sets
-                )
+            train_dataset.transform = lambda x: (x - mean) / std
+            train_dataset.target_transform = PiecewiseScaler(max_rul=args.max_rul)
+            # If mode is training, return the dataset
+            if mode == 'train':
+                return train_dataset
+            # Create dataset for specified mode
+            dataset = FedCMAPSSDataset(
+                data_root=args.data_root,
+                task_id=args.task,
+                split_id=args.split,
+                client_id=client_id,
+                mode=mode,
+                transform=train_dataset.transform,
+                target_transform=train_dataset.target_transform
+            )
             # Return dataset
             return dataset
         elif dataset_name == "FedCMAPSSWindow":

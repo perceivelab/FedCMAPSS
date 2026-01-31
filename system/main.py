@@ -10,6 +10,7 @@ import torchvision
 import logging
 
 from flcore.servers.serveravg_rul import FedAvg_RUL
+from flcore.servers.servercentralized_rul import Centralized_RUL
 from flcore.servers.serveravg import FedAvg
 from flcore.servers.serverpFedMe import pFedMe
 from flcore.servers.serverperavg import PerAvg
@@ -241,6 +242,11 @@ def run(args):
         if args.algorithm == "FedAvg_RUL":
             server = FedAvg_RUL(args, i)
 
+        elif args.algorithm == "Centralized_RUL":
+            if not args.centralized:
+                raise ValueError("Centralized_RUL requires --centralized True")
+            server = Centralized_RUL(args, i)
+
         elif args.algorithm == "FedAvg":
             args.head = copy.deepcopy(args.model.fc)
             args.model.fc = nn.Identity()
@@ -454,6 +460,7 @@ if __name__ == "__main__":
     parser.add_argument('--max-rul', type=int, default=125)
     parser.add_argument('--window-size', type=int, default=30)
     parser.add_argument('--results-root', type=str, default="../results")
+    parser.add_argument('--centralized', action='store_true')
     parser.add_argument('-ncl', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model", type=str, default="LSTM_RUL")
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
