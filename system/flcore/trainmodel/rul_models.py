@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import List, Optional, Dict
+
 
 # -----------------------------
 # 1) Zhu et al. (2025): AFT-Conv2D regressor
@@ -334,4 +336,114 @@ class RNN_RUL(nn.Module):
 
         y = F.relu(self.fc1(h_last))
         y = self.fc2(y)
+        return y
+    
+
+# -----------------------------
+# 6) Soderkvist et al. (2024): MLP_LSTM_MLP_RUL
+#    Collaborative Training of Data-Driven Remaining Useful Life
+#    Prediction Models Using Federated Learning
+# -----------------------------
+class MLP(nn.Module):
+    def __init__(
+        self,
+        in_dim: int,
+        hidden: List[int],
+        out_dim: int,
+        activation: nn.Module = nn.ReLU(),
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        dims = [in_dim] + hidden + [out_dim]
+        layers: List[nn.Module] = []
+
+        for i in range(len(dims) - 1):
+            layers.append(nn.Linear(dims[i], dims[i + 1]))
+            if i < len(dims) - 2:
+                layers.append(activation.__class__())
+                if dropout > 0.0:
+                    layers.append(nn.Dropout(dropout))
+
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class MLP_LSTM_MLP(nn.Module):
+    """
+    MLP-LSTM-MLP (many-to-one):
+    - apply a feature MLP at each time step
+    - run an LSTM over the sequence of extracted features
+    - take only the last hidden state (last time step)
+    - feed it to an MLP head to predict a scalar RUL
+
+    Input : x  shape [B, T, F]
+    Output: y  shape [B, 1]
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        feature_mlp_hidden: List[int] = [128, 128],
+        feature_dim_out: int = 128,
+        lstm_hidden: int = 128,
+        lstm_layers: int = 1,
+        lstm_dropout: float = 0.0,
+        head_hidden: List[int] = [128, 64],
+        head_dropout: float = 0.0,
+        return_scalar: bool = False, # if True: (B,), else (B,1)
+    ):
+        super().__init__()
+
+        self.backbone = nn.ModuleDict({
+            "feature_mlp": MLP(
+                in_dim=input_size,
+                hidden=feature_mlp_hidden,
+                out_dim=feature_dim_out,
+                activation=nn.ReLU(),
+                dropout=head_dropout,
+            ),
+            "lstm": nn.LSTM(
+                input_size=feature_dim_out,
+                hidden_size=lstm_hidden,
+                num_layers=lstm_layers,
+                batch_first=True,
+                dropout=(lstm_dropout if lstm_layers > 1 else 0.0),
+            )
+        })
+
+        self.head = MLP(
+            in_dim=lstm_hidden,
+            hidden=head_hidden,
+            out_dim=1,
+            activation=nn.ReLU(),
+            dropout=head_dropout,
+        )
+
+        self.return_scalar = return_scalar
+
+    def forward(self, x: torch.Tensor, lengths: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        x: [B, T, F]
+        lengths: [B,] optional, used if your windows are padded.
+                If None, all sequences are assumed to have length T.
+        """
+        B, T, F = x.shape
+        z = self.backbone["feature_mlp"](x.reshape(B * T, F)).reshape(B, T, -1)
+
+        if lengths is not None:
+            packed = nn.utils.rnn.pack_padded_sequence(
+                z, lengths.cpu(), batch_first=True, enforce_sorted=False
+            )
+            packed_out, (h_n, c_n) = self.backbone["lstm"](packed)
+            h_last = h_n[-1]
+        else:
+            out_seq, _ = self.backbone["lstm"](z)
+            h_last = out_seq[:, -1, :]
+
+        y = self.head(h_last)
+
+        if self.return_scalar:
+            return y.view(B)
         return y

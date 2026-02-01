@@ -1,5 +1,5 @@
 from flcore.trainmodel.models import LSTM
-from flcore.trainmodel.rul_models import LSTM_v2_RUL, AFTConv2D, AttBiGRU, RNN_RUL, Chen_CNN_RUL
+from flcore.trainmodel.rul_models import LSTM_v2_RUL, MLP_LSTM_MLP, AFTConv2D, AttBiGRU, RNN_RUL, Chen_CNN_RUL
 
 class RULModelFactory:
     @staticmethod
@@ -24,6 +24,16 @@ class RULModelFactory:
                 layer_dropout=0.1,
                 recurrent_dropout=0.2,
                 gaussian_noise=0.01,
+            )
+        
+        elif args.model == "MLP_LSTM_MLP_RUL":
+            return MLP_LSTM_MLP(
+                input_size=args.input_size,
+                feature_dim_out=128,
+                lstm_hidden=128,
+                lstm_layers=1,
+                head_hidden=[128, 64],
+                return_scalar=False
             )
         
         elif args.model == "AFT_RUL":
