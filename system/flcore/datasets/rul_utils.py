@@ -1,21 +1,27 @@
 import torch
 
 class PiecewiseScaler:
-    def __init__(self, max_rul=125.0):
+    def __init__(self, max_rul=125.0, normalize=125.0):
         self.max_rul = max_rul
+        self.normalize = normalize
         
     def __call__(self, y):
-        # Clip and scale
-        if isinstance(y, torch.Tensor):
-             y_clipped = torch.clamp(y, max=self.max_rul)
-        else:
-            y_clipped = min(y, self.max_rul)
-        y_norm = y_clipped / self.max_rul
-        return y_norm
+        # Clip
+        if self.max_rul is not None:
+            if isinstance(y, torch.Tensor):
+                y = torch.clamp(y, max=self.max_rul)
+            else:
+                y = min(y, self.max_rul)
+        # Normalize
+        if self.normalize is not None:
+            y = y / self.normalize
+        return y
 
     def inverse(self, y_norm):
         # Get back to cycles
-        return y_norm * self.max_rul
+        if self.normalize is not None:
+            return y_norm * self.normalize
+        return y_norm
 
 def compute_nasa_score(y_pred, y_true):
     # Ensure shapes match and flatten

@@ -23,6 +23,7 @@ class Client_RUL(Client):
         self.device = args.device
         self.loss = nn.MSELoss()
         self.args = args
+        self.scaler = PiecewiseScaler(max_rul=args.max_rul, normalize=args.normalize_rul)
 
     def load_train_data(self, batch_size=None):
         if batch_size == None:
@@ -59,8 +60,6 @@ class Client_RUL(Client):
         return DataLoader(test_dataset, batch_size, drop_last=False, shuffle=False)
         
     def test_metrics(self):
-        # Create piecewise scaler to invert predictions
-        piecewise_scaler = PiecewiseScaler(max_rul=self.args.max_rul)
         # Process test set
         testloaderfull = self.load_test_data()
         self.model.eval()
@@ -82,8 +81,8 @@ class Client_RUL(Client):
                 test_num += y.shape[0]
 
                 # Invert prediction and label for other metrics
-                output = piecewise_scaler.inverse(output.detach())
-                y = piecewise_scaler.inverse(y)
+                output = self.scaler.inverse(output.detach())
+                y = self.scaler.inverse(y)
 
                 # Update SSE
                 sse += nn.MSELoss(reduction='sum')(output, y).item()
@@ -102,8 +101,6 @@ class Client_RUL(Client):
         }
 
     def train_metrics(self):
-        # Create piecewise scaler to invert predictions
-        piecewise_scaler = PiecewiseScaler(max_rul=self.args.max_rul)
         # Process training set
         trainloader = self.load_train_data()
         self.model.eval()
@@ -123,8 +120,8 @@ class Client_RUL(Client):
                 # Update MSE loss
                 mse_loss += nn.MSELoss(reduction='sum')(output, y).item()
                 # Invert prediction and label
-                output = piecewise_scaler.inverse(output.detach())
-                y = piecewise_scaler.inverse(y)
+                output = self.scaler.inverse(output.detach())
+                y = self.scaler.inverse(y)
                 # Update SSE
                 sse += nn.MSELoss(reduction='sum')(output, y).item()
                 # Update NASA score

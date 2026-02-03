@@ -23,6 +23,8 @@ class RULDatasetFactory:
         
     @staticmethod
     def create_dataset(dataset_name, mode, client_id, args):
+        # Create scaler
+        scaler = PiecewiseScaler(max_rul=args.max_rul, normalize=args.normalize_rul)
         if dataset_name == "FedCMAPSS" and args.centralized:
             # Get number of clients
             num_clients = FedCMAPSSDataset.get_num_clients(args.data_root, args.task, args.split)
@@ -39,7 +41,7 @@ class RULDatasetFactory:
             mean, std = train_dataset.stats()
             # Create transforms
             train_dataset.transform = lambda x: (x - mean) / std
-            train_dataset.target_transform = PiecewiseScaler(max_rul=args.max_rul)
+            train_dataset.target_transform = scaler
             # If mode is training, return the dataset
             if mode == 'train':
                 return train_dataset
@@ -69,7 +71,7 @@ class RULDatasetFactory:
             mean, std = train_dataset.stats()
             # Create transforms
             train_dataset.transform = lambda x: (x - mean) / std
-            train_dataset.target_transform = PiecewiseScaler(max_rul=args.max_rul)
+            train_dataset.target_transform = scaler
             # If mode is training, return the dataset
             if mode == 'train':
                 return train_dataset

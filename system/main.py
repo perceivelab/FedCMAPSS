@@ -79,6 +79,12 @@ def run(args):
     reporter = MemReporter()
     model_str = args.model
 
+    # Check RUL clipping and normalization settings
+    if args.no_clip_rul:
+        args.max_rul = None
+    if args.no_normalize_rul:
+        args.normalize_rul = None
+
     # Create results directories
     run_name = f"{args.dataset}_{args.algorithm}_{args.model}_{args.task}_{args.split}_{time.strftime('%Y%m%d-%H%M%S')}"
     args.results_root = os.path.join(args.results_root, run_name)
@@ -459,6 +465,9 @@ if __name__ == "__main__":
     parser.add_argument('-t', "--task", type=str, default='A')
     parser.add_argument('--split', type=int, default=0)
     parser.add_argument('--max-rul', type=int, default=125)
+    parser.add_argument('--normalize-rul', type=int, default=125)
+    parser.add_argument('--no-clip-rul', action='store_true')
+    parser.add_argument('--no-normalize-rul', action='store_true')
     parser.add_argument('--window-size', type=int, default=30)
     parser.add_argument('--results-root', type=str, default="../results")
     parser.add_argument('--centralized', action='store_true')
