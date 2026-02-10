@@ -25,7 +25,7 @@ class clientAVG_RUL(Client_RUL):
                 y = y.to(self.device)
                 if self.train_slow:
                     time.sleep(0.1 * np.abs(np.random.rand()))
-                output = self.model(x)
+                output = self.model(x).squeeze(-1)
                 loss = self.loss(output, y)
                 self.optimizer.zero_grad()
                 loss.backward()

@@ -74,7 +74,7 @@ class Client_RUL(Client):
                 else:
                     x = x.to(self.device)
                 y = y.to(self.device)
-                output = self.model(x)
+                output = self.model(x).squeeze(-1)
 
                 # Update MSE loss (normalized)
                 mse_loss += nn.MSELoss(reduction='sum')(output, y).item()
@@ -115,7 +115,7 @@ class Client_RUL(Client):
                 else:
                     x = x.to(self.device)
                 y = y.to(self.device)
-                output = self.model(x)
+                output = self.model(x).squeeze(-1)
                 train_num += y.shape[0]
                 # Update MSE loss
                 mse_loss += nn.MSELoss(reduction='sum')(output, y).item()
