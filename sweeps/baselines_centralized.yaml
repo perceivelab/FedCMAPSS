@@ -1,5 +1,5 @@
 program: system/main.py
-name: centralized-rul-grid
+name: centralized-nocliprul
 method: grid
 description: Grid search over FedCMAPSS RUL tasks, learning rates, and training epochs in centralized mode.
 
@@ -12,6 +12,7 @@ command:
   - --algorithm
   - Centralized_RUL
   - --centralized
+  - --no-clip-rul
   - --dataset
   - FedCMAPSSWindow
   - --data_root
@@ -24,9 +25,9 @@ parameters:
   task:
     values: ["A"]
   local_learning_rate:
-    values: [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05]
+    values: [0.0001, 0.001, 0.01]
   global_rounds:
-    values: [10, 20, 30, 40, 50, 100, 200]
+    values: [10, 30, 50, 100]
   split:
     values: [0]
   batch_size:
