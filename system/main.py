@@ -466,7 +466,10 @@ if __name__ == "__main__":
     parser.add_argument('--split', type=int, default=0)
     parser.add_argument('--max-rul', type=int, default=125)
     parser.add_argument('--normalize-rul', type=int, default=125)
-    parser.add_argument('--no-clip-rul', action='store_true')
+    parser.add_argument('--no-clip-rul', '--no_clip_rul', dest='no_clip_rul',
+                        type=lambda s: str(s).lower() in ['1', 'true', 'yes'],
+                        nargs='?', const=True, default=False,
+                        help="Disable RUL clipping; accepts bare flag or boolean value (for sweeps).")
     parser.add_argument('--no-normalize-rul', action='store_true')
     parser.add_argument('--window-size', type=int, default=30)
     parser.add_argument('--results-root', type=str, default="../results")
