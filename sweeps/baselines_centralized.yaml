@@ -1,5 +1,5 @@
 program: system/main.py
-name: centralized-nocliprul
+name: baselines_centralized
 method: grid
 description: Grid search over FedCMAPSS RUL tasks, learning rates, and training epochs in centralized mode.
 
@@ -12,13 +12,10 @@ command:
   - --algorithm
   - Centralized_RUL
   - --centralized
-  - --no-clip-rul
   - --dataset
   - FedCMAPSSWindow
   - --data_root
   - dataset/FedCMAPSS/
-  - --model
-  - LSTM_RUL
   - ${args}
 
 parameters:
@@ -27,9 +24,12 @@ parameters:
   local_learning_rate:
     values: [0.0001, 0.001, 0.01]
   global_rounds:
-    values: [10, 30, 50, 100]
+    values: [10, 30, 50, 100, 200]
   split:
     values: [0]
   batch_size:
-    values: [16, 32, 64]
-
+    values: [16,32,64]
+  no_clip_rul:
+    values: [true, false]
+  model:
+    values: ["LSTM_v2_RUL", "MLP_LSTM_MLP_RUL", "AFT_RUL", "AttBiGRU_RUL", "RNN_RUL", "Chen_CNN_RUL","LSTM_RUL"]
