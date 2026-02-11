@@ -566,5 +566,5 @@ class LSTM(nn.Module):
         out = out[:, -1, :]
         
         out = self.dropout(out)
-        out = self.fc(out)
+        out = self.fc(out).squeeze(-1)
         return out
