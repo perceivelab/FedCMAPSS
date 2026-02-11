@@ -28,7 +28,7 @@ class RULModelFactory:
             )
         
         elif args.model == "MLP_LSTM_MLP_RUL":
-            # batch size: 14; learning rate: 0.0002; weight decay: 0.001
+            # batch size: 14; learning rate: 0.0002; weight decay: 0.001; optimizer: AdamW
             # 200 global rounds; 1 local epoch
             # trained for 300 epochs; best model selected by lowest validation loss
             #args.local_learning_rate = 2e-4

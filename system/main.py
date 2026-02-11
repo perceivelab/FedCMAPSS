@@ -10,6 +10,9 @@ import torchvision
 import logging
 
 from flcore.servers.serveravg_rul import FedAvg_RUL
+from flcore.servers.serverscaffold_rul import SCAFFOLD_RUL
+from flcore.servers.serverprox_rul import FedProx_RUL
+from flcore.servers.serverdyn_rul import FedDyn_RUL
 from flcore.servers.servercentralized_rul import Centralized_RUL
 from flcore.servers.serveravg import FedAvg
 from flcore.servers.serverpFedMe import pFedMe
@@ -247,6 +250,15 @@ def run(args):
         # select algorithm
         if args.algorithm == "FedAvg_RUL":
             server = FedAvg_RUL(args, i)
+
+        elif args.algorithm == "SCAFFOLD_RUL":
+            server = SCAFFOLD_RUL(args, i)
+
+        elif args.algorithm == "FedProx_RUL":
+            server = FedProx_RUL(args, i)
+
+        elif args.algorithm == "FedDyn_RUL":
+            server = FedDyn_RUL(args, i)
 
         elif args.algorithm == "Centralized_RUL":
             if not args.centralized:
