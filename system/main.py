@@ -13,6 +13,7 @@ from flcore.servers.serveravg_rul import FedAvg_RUL
 from flcore.servers.serverscaffold_rul import SCAFFOLD_RUL
 from flcore.servers.serverprox_rul import FedProx_RUL
 from flcore.servers.serverdyn_rul import FedDyn_RUL
+from flcore.servers.servercross_rul import FedCross_RUL
 from flcore.servers.servercentralized_rul import Centralized_RUL
 from flcore.servers.serveravg import FedAvg
 from flcore.servers.serverpFedMe import pFedMe
@@ -259,6 +260,9 @@ def run(args):
 
         elif args.algorithm == "FedDyn_RUL":
             server = FedDyn_RUL(args, i)
+
+        elif args.algorithm == "FedCross_RUL":
+            server = FedCross_RUL(args, i)
 
         elif args.algorithm == "Centralized_RUL":
             if not args.centralized:
