@@ -7,6 +7,8 @@ class RULModelFactory:
         if args.model == "LSTM_RUL":
             # configuration used in "A Federated Learning-Based Industrial Health Prognostics 
             # for Heterogeneous Edge Devices Using Matched Feature Extraction"
+            args.local_learning_rate = 0.01
+            args.batch_size = 16
             return LSTM(
                 input_size=args.input_size,
                 hidden_sizes=[256],
@@ -17,6 +19,8 @@ class RULModelFactory:
         if args.model == "LSTM_v2_RUL":
             # configuration used in "Using Federated Machine Learning in Predictive Maintenance of Jet Engines"
             # batch size: 32; learning rate: 0.001; optimizer: AdamW
+            args.local_learning_rate = 0.01
+            args.batch_size = 16
             return LSTM_v2_RUL(
                 input_size=args.input_size,
                 lstm_layers=4,
@@ -32,6 +36,8 @@ class RULModelFactory:
             # 200 global rounds; 1 local epoch
             # trained for 300 epochs; best model selected by lowest validation loss
             #args.local_learning_rate = 2e-4
+            args.local_learning_rate = 0.01
+            args.batch_size = 64
             return MLP_LSTM_MLP(
                 input_size=args.input_size,
                 feature_dim_out=128,
@@ -45,6 +51,8 @@ class RULModelFactory:
             # learning rate: 0.004; optimizer: Adam
             # 20 global rounds; 18 local epochs
             #args.local_learning_rate = 4e-3
+            args.local_learning_rate = 0.01
+            args.batch_size = 32
             return AFTConv2D(
                 input_size=args.input_size,
                 window_size=args.window_size, # required for the learnable positional bias, which is a [window_size, window_size] matrix 
@@ -54,6 +62,8 @@ class RULModelFactory:
             # batch size: 64; learning rate: 0.001
             # 50 global rounds; 3 local epochs; 10 window size
             #args.local_learning_rate = 1e-3
+            args.local_learning_rate = 0.01
+            args.batch_size = 32
             return AttBiGRU(
                 input_size=args.input_size,
                 ws=args.window_size,
@@ -66,6 +76,8 @@ class RULModelFactory:
             # 10 global rounds; 100 local epochs; 5 nodes; 100 window size; #features: 16
             # convergenza entro 300 epoche
             #args.local_learning_rate = 5e-4
+            args.local_learning_rate = 0.001
+            args.batch_size = 16
             return RNN_RUL(
                 input_size=args.input_size,
                 fc_hidden=40,
@@ -75,6 +87,8 @@ class RULModelFactory:
             # optimizer: AdaMod
             # window size: 30 (FD001) and 15 (FD004); #features: 14
             # retraining rounds 80 (FD001) and 100 (FD004)
+            args.local_learning_rate = 0.01
+            args.batch_size = 16
             return Chen_CNN_RUL(
                 input_size=args.input_size,
                 window_size=args.window_size,

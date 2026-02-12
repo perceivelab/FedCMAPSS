@@ -15,7 +15,6 @@ class FedAvg_RUL(Server_RUL):
         print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
         print("Finished creating server and clients.")
 
-        # self.load_model()
         self.Budget = []
 
 
