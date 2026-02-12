@@ -8,3 +8,5 @@ dataset/FedCMAPSS/tasks.json
 private/dataset/
 dataset/FedCMAPSS.zip
 wandb/
+out.txt
+slurm_launch.sh
