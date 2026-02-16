@@ -128,6 +128,23 @@ def apply_missing_config_override(args):
     return args
 
 
+def build_wandb_config(args):
+    config = {}
+    for key, value in vars(args).items():
+        if key == "wandb_run":
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            config[key] = value
+        elif isinstance(value, (list, tuple)):
+            if all(isinstance(item, (str, int, float, bool)) or item is None for item in value):
+                config[key] = list(value)
+            else:
+                config[key] = str(value)
+        else:
+            config[key] = str(value)
+    return config
+
+
 def run(args):
 
     time_list = []
@@ -156,17 +173,7 @@ def run(args):
                 name=args.wandb_run_name or run_name,
                 group=args.wandb_group,
                 tags=args.wandb_tags,
-                config={
-                    "dataset": args.dataset,
-                    "algorithm": args.algorithm,
-                    "model": args.model,
-                    "task": args.task,
-                    "split": args.split,
-                    "num_clients": args.num_clients,
-                    "global_rounds": args.global_rounds,
-                    "batch_size": args.batch_size,
-                    "learning_rate": args.local_learning_rate,
-                },
+                config=build_wandb_config(args),
             )
         except ImportError:
             print("wandb is not installed; disabling wandb logging.")
