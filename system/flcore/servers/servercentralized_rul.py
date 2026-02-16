@@ -27,11 +27,7 @@ class Centralized_RUL(Server_RUL):
             self.send_models()
 
             if i%self.eval_gap == 0:
-                print(f"\n-------------Round number: {i}-------------")
-                print("\nEvaluate global model")
-                self.evaluate(round_idx=i)
-                self.save_results(i)
-                self.save_models(i)
+                self.evaluate_and_checkpoint(i)
 
             for client in self.selected_clients:
                 client.train()

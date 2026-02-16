@@ -98,7 +98,6 @@ class Server_RUL(Server):
             'local_stats_test': stats,
             'local_stats_train': stats_train
         })
-
         # Print global results
         print("Global Train Loss: {:.4f}".format(global_stats['train_mse_loss']))
         print("Global Train RMSE: {:.4f}".format(global_stats['train_rmse']))
@@ -181,17 +180,20 @@ class Server_RUL(Server):
 
         log_payload["clients/metrics_table"] = client_table
         wandb_run.log(log_payload, step=log_step)
-    
-    def save_results(self, round):
-        # Save results history to a file
-        results_path = os.path.join(self.args.metrics_root, f'metrics_round_{round}.pt')
-        torch.save(self.results_history, results_path)
 
-    def save_models(self, round):
-        # Save global model to a file
-        model_path = os.path.join(self.args.model_root, f'global_model_round_{round}.pt')
-        torch.save(self.global_model.state_dict(), model_path)
-        # Save each client model to a file
-        for client in self.clients:
-            client_model_path = os.path.join(self.args.model_root, f'client_{client.id}_model_round_{round}.pt')
-            torch.save(client.model.state_dict(), client_model_path)
+    def evaluate_and_checkpoint(self, round_idx):
+        print(f"\n-------------Round number: {round_idx}-------------")
+        print("\nEvaluate global model")
+        self.evaluate(round_idx)
+        self.save_checkpoint(round_idx)
+    
+    def save_checkpoint(self, round):
+        # Save to a file
+        data = {
+            'args': self.args,
+            'round': round,
+            'global_model_state_dict': self.global_model.state_dict(),
+            'results_history': self.results_history,
+        }
+        model_path = os.path.join(self.args.results_root, f'checkpoint.pt')
+        torch.save(data, model_path)

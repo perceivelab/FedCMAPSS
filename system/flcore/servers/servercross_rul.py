@@ -35,11 +35,7 @@ class FedCross_RUL(Server_RUL):
             s_t = time.time()
 
             if i%self.eval_gap == 0:
-                print(f"\n-------------Round number: {i}-------------")
-                print("\nEvaluate global model")
-                self.evaluate(round_idx=i)
-                self.save_results(i)
-                self.save_models(i)
+                self.evaluate_and_checkpoint(round_idx=i)
 
             self.selected_clients = self.select_clients()
 

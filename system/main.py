@@ -143,12 +143,7 @@ def run(args):
     # Create results directories
     run_name = f"{args.dataset}_{args.algorithm}_{args.model}_{args.task}_{args.split}_{time.strftime('%Y%m%d-%H%M%S')}"
     args.results_root = os.path.join(args.results_root, run_name)
-    args.metrics_root = os.path.join(args.results_root, 'metrics')
-    args.model_root = os.path.join(args.results_root, 'model')
-    os.makedirs(args.metrics_root, exist_ok=True)
-    os.makedirs(args.model_root, exist_ok=True)
-    # Store args
-    torch.save(args, os.path.join(args.results_root, 'args.pt'))
+    os.makedirs(args.results_root, exist_ok=True)
 
     # Optional Weights & Biases logging
     args.wandb_run = None

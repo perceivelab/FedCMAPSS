@@ -28,8 +28,7 @@ class FedAvg_RUL(Server_RUL):
                 print(f"\n-------------Round number: {i}-------------")
                 print("\nEvaluate global model")
                 self.evaluate(round_idx=i)
-                self.save_results(i)
-                self.save_models(i)
+                self.save_checkpoint(i)
 
             for client in self.selected_clients:
                 client.train()
