@@ -336,7 +336,7 @@ class RNN_RUL(nn.Module):
 
         y = F.relu(self.fc1(h_last))
         y = self.fc2(y)
-        return y
+        return y.squeeze(-1)
     
 
 # -----------------------------
@@ -446,4 +446,4 @@ class MLP_LSTM_MLP(nn.Module):
 
         if self.return_scalar:
             return y.view(B)
-        return y
+        return y.squeeze(-1)
