@@ -1,0 +1,31 @@
+program: system/main.py
+name: methods_grid_1_split2
+method: grid
+
+command:
+  - ${env}
+  - ${interpreter}
+  - -u
+  - system/main.py
+  - --wandb-log
+  - --dataset
+  - FedCMAPSSWindow
+  - --data_root
+  - dataset/FedCMAPSS/
+  - ${args}
+
+parameters:
+  task:
+    values: ["A","B","C","D","E"]
+  global_rounds:
+    values: [100]
+  split:
+    values: [2]
+  local_epochs:
+    values: [1,5,10]
+  no_clip_rul:
+    values: [false]
+  model:
+    values: ["LSTM_RUL", "AFT_RUL", "AttBiGRU_RUL", "RNN_RUL", "Chen_CNN_RUL"]
+  algorithm:
+    values: ["FedAvg_RUL", "SCAFFOLD_RUL", "FedProx_RUL", "FedDyn_RUL", "FedCross_RUL"]
