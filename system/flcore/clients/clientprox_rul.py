@@ -15,7 +15,7 @@ class clientProx_RUL(Client_RUL):
 
         self.global_params = copy.deepcopy(list(self.model.parameters()))
 
-        self.loss = nn.CrossEntropyLoss()
+        self.loss = nn.MSELoss()
         self.optimizer = PerturbedGradientDescent(
             self.model.parameters(), lr=self.learning_rate, mu=self.mu)
         self.learning_rate_scheduler = torch.optim.lr_scheduler.ExponentialLR(
