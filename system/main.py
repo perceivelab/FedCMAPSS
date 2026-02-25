@@ -318,8 +318,8 @@ def run(args):
             server = FedCross_RUL(args, i)
 
         elif args.algorithm == "Centralized_RUL":
-            if not args.centralized:
-                raise ValueError("Centralized_RUL requires --centralized True")
+            if not args.centralized and args.centralized_client is None:
+                raise ValueError("Centralized_RUL requires --centralized or --centralized-client to be set")
             server = Centralized_RUL(args, i)
 
         elif args.algorithm == "FedAvg":
@@ -543,6 +543,7 @@ if __name__ == "__main__":
     parser.add_argument('--window-size', type=int, default=30)
     parser.add_argument('--results-root', type=str, default="../results")
     parser.add_argument('--centralized', action='store_true')
+    parser.add_argument('--centralized-client', type=int)
     parser.add_argument('-ncl', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model", type=str, default="LSTM_RUL")
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)

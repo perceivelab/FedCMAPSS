@@ -2,6 +2,7 @@ import time
 import copy
 from flcore.clients.clientavg_rul import clientAVG_RUL
 from flcore.servers.serverbase_rul import Server_RUL
+from flcore.datasets.rul_dataset_factory import RULDatasetFactory
 
 
 class Centralized_RUL(Server_RUL):
@@ -15,6 +16,32 @@ class Centralized_RUL(Server_RUL):
         self.set_clients(clientAVG_RUL)
         # self.load_model()
         self.Budget = []
+    
+    def set_clients(self, clientObj):
+        # Get client id
+        i = 0
+        if self.args.centralized_client is not None:
+            i = self.args.centralized_client
+        # Create dummy dataset to get split sizes
+        dummy_train_dataset = RULDatasetFactory.create_dataset(
+            dataset_name=self.dataset,
+            mode='train',
+            client_id=i,
+            args=self.args,
+        )
+        dummy_test_dataset = RULDatasetFactory.create_dataset(
+            dataset_name=self.dataset,
+            mode='test',
+            client_id=i,
+            args=self.args,
+        )
+        client = clientObj(self.args, 
+                        id=i, 
+                        train_samples=len(dummy_train_dataset), 
+                        test_samples=len(dummy_test_dataset), 
+                        train_slow=False, 
+                        send_slow=False)
+        self.clients.append(client)
     
     def select_clients(self):
         self.current_num_join_clients = 1
