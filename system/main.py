@@ -16,6 +16,7 @@ from flcore.servers.serverprox_rul import FedProx_RUL
 from flcore.servers.serverdyn_rul import FedDyn_RUL
 from flcore.servers.servercross_rul import FedCross_RUL
 from flcore.servers.servercentralized_rul import Centralized_RUL
+from flcore.servers.serverlocal_rul import Local_RUL
 from flcore.servers.serveravg import FedAvg
 from flcore.servers.serverpFedMe import pFedMe
 from flcore.servers.serverperavg import PerAvg
@@ -317,6 +318,9 @@ def run(args):
         elif args.algorithm == "FedCross_RUL":
             server = FedCross_RUL(args, i)
 
+        elif args.algorithm == "Local_RUL":
+            server = Local_RUL(args, i)
+
         elif args.algorithm == "Centralized_RUL":
             if not args.centralized and args.centralized_client is None:
                 raise ValueError("Centralized_RUL requires --centralized or --centralized-client to be set")
@@ -543,7 +547,7 @@ if __name__ == "__main__":
     parser.add_argument('--window-size', type=int, default=30)
     parser.add_argument('--results-root', type=str, default="../results")
     parser.add_argument('--centralized', action='store_true')
-    parser.add_argument('--centralized-client', type=int)
+    parser.add_argument('--centralized-client', type=int, help="If set and when using Centralized_RUL, use a single client with this ID for training, simulating local training.")
     parser.add_argument('-ncl', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model", type=str, default="LSTM_RUL")
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
