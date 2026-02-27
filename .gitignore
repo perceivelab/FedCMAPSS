@@ -10,3 +10,4 @@ dataset/FedCMAPSS.zip
 wandb/
 out.txt
 slurm_launch.sh
+.vscode/settings.json

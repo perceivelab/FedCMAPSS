@@ -188,11 +188,15 @@ class Server_RUL(Server):
         self.save_checkpoint(round_idx)
     
     def save_checkpoint(self, round):
+        # Convert model parameters to CPU if necessary
+        model_params = self.global_model.state_dict()
+        if next(iter(model_params.values())).is_cuda:
+            model_params = {k: v.cpu() for k, v in model_params.items()}
         # Save to a file
         data = {
             'args': self.args,
             'round': round,
-            'global_model_state_dict': self.global_model.state_dict(),
+            'global_model_state_dict': model_params,
             'results_history': self.results_history,
         }
         model_path = os.path.join(self.args.results_root, f'checkpoint.pt')
