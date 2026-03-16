@@ -14,6 +14,8 @@ class RULModelFactory:
                 hidden_sizes=[256],
                 output_size=1,
                 dropout_prob=getattr(args, 'dropout_prob', 0.0),
+                output_clip_0_1=args.output_clip_0_1, 
+                output_sigmoid=args.output_sigmoid,
             )
         
         if args.model == "LSTM_v2_RUL":
@@ -29,6 +31,8 @@ class RULModelFactory:
                 layer_dropout=0.1,
                 recurrent_dropout=0.2,
                 gaussian_noise=0.01,
+                output_clip_0_1=args.output_clip_0_1, 
+                output_sigmoid=args.output_sigmoid,
             )
         
         elif args.model == "MLP_LSTM_MLP_RUL":
@@ -44,7 +48,9 @@ class RULModelFactory:
                 lstm_hidden=128,
                 lstm_layers=1,
                 head_hidden=[128, 64],
-                return_scalar=False
+                return_scalar=False,
+                output_clip_0_1=args.output_clip_0_1, 
+                output_sigmoid=args.output_sigmoid,
             )
         
         elif args.model == "AFT_RUL":
@@ -55,7 +61,9 @@ class RULModelFactory:
             args.batch_size = 32
             return AFTConv2D(
                 input_size=args.input_size,
-                window_size=args.window_size, # required for the learnable positional bias, which is a [window_size, window_size] matrix 
+                window_size=args.window_size, # required for the learnable positional bias, which is a [window_size, window_size] matrix
+                output_clip_0_1=args.output_clip_0_1, 
+                output_sigmoid=args.output_sigmoid,
             )
         
         elif args.model == "AttBiGRU_RUL":
@@ -69,6 +77,8 @@ class RULModelFactory:
                 ws=args.window_size,
                 gru_hidden=32,
                 attn_heads=4,
+                output_clip_0_1=args.output_clip_0_1, 
+                output_sigmoid=args.output_sigmoid,
             )
         
         elif args.model == "RNN_RUL":
@@ -81,6 +91,8 @@ class RULModelFactory:
             return RNN_RUL(
                 input_size=args.input_size,
                 fc_hidden=40,
+                output_clip_0_1=args.output_clip_0_1, 
+                output_sigmoid=args.output_sigmoid,
             )
         
         elif args.model == "Chen_CNN_RUL":
@@ -94,6 +106,8 @@ class RULModelFactory:
                 window_size=args.window_size,
                 conv_channels=[16, 16, 16, 16, 16, 16], # not defined in the paper
                 fc_dropout=getattr(args, "dropout_prob", 0.0),
+                output_clip_0_1=args.output_clip_0_1, 
+                output_sigmoid=args.output_sigmoid,
             )
 
         else:

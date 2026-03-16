@@ -11,3 +11,6 @@ wandb/
 out.txt
 slurm_launch.sh
 .vscode/settings.json
+metrics/
+runs/
+*.png

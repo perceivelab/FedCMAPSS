@@ -1,0 +1,35 @@
+program: system/main.py
+name: clip_0_1_task_B
+method: grid
+
+command:
+  - ${env}
+  - ${interpreter}
+  - -u
+  - system/main.py
+  - --wandb-log
+  - --dataset
+  - FedCMAPSSWindow
+  - --data_root
+  - dataset/FedCMAPSS/
+  - ${args}
+
+parameters:
+  task:
+    values: ["B"]
+  global_rounds:
+    values: [100]
+  local_rounds:
+    values: [10]
+  split:
+    values: [0,1,2,3,4,5,6,7,8,9]
+  no_clip_rul:
+    values: [false]
+  output_clip_0_1:
+    values: [true]
+  output_sigmoid:
+    values: [false]
+  model:
+    values: ["AFT_RUL"]
+  algorithm:
+    values: ["FedCross_RUL"]

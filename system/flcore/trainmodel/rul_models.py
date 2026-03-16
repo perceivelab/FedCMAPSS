@@ -4,6 +4,19 @@ import torch.nn.functional as F
 from typing import List, Optional, Dict
 
 
+class OutputActivationMixin:
+    def _setup_output_activation(self, output_clip_0_1: bool = False, output_sigmoid: bool = False):
+        self.output_clip_0_1 = output_clip_0_1
+        self.output_sigmoid = output_sigmoid
+
+    def _apply_output_activation(self, y: torch.Tensor) -> torch.Tensor:
+        if self.output_sigmoid:
+            y = torch.sigmoid(y)
+        if self.output_clip_0_1:
+            y = torch.clamp(y, min=0.0, max=1.0)
+        return y
+
+
 # -----------------------------
 # 1) Zhu et al. (2025): AFT-Conv2D regressor
 #    Collaborative Prognostics of Lithium-Ion Batteries Using Federated Learning With Dynamic Weighting and Attention Mechanism
@@ -30,9 +43,10 @@ class AFTBlock(nn.Module):
 
         return rQ * context  # [B,T,D]
 
-class AFTConv2D(nn.Module):
-    def __init__(self, window_size=30, input_size=25):
+class AFTConv2D(nn.Module, OutputActivationMixin):
+    def __init__(self, window_size=30, input_size=25, output_clip_0_1: bool = False, output_sigmoid: bool = False):
         super().__init__()
+        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
         self.aft = AFTBlock(window_size=window_size, input_size=input_size)
 
         self.conv1 = nn.Conv2d(1, 16, 3, padding=1)
@@ -52,14 +66,15 @@ class AFTConv2D(nn.Module):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = self.pool(x).flatten(1)
-        return self.fc(x).squeeze(-1)
+        y = self.fc(x).squeeze(-1)
+        return self._apply_output_activation(y)
     
 
 # -----------------------------
 # 2) Chen et al. (2023): Chen_CNN_RUL
 #    Federated Learning with Network Pruning and Rebirth for Remaining Useful Life Prediction of Engineering Systems
 # -----------------------------
-class Chen_CNN_RUL(nn.Module):
+class Chen_CNN_RUL(nn.Module, OutputActivationMixin):
     """
     Implemantion details within the paper:
       Conv1..Conv5: kernel 10x1
@@ -70,8 +85,10 @@ class Chen_CNN_RUL(nn.Module):
 
     NOTE: conv_channels is NOT specified
     """
-    def __init__(self, input_size, window_size, conv_channels, fc_dropout=0.0):
+    def __init__(self, input_size, window_size, conv_channels, fc_dropout=0.0,
+                 output_clip_0_1: bool = False, output_sigmoid: bool = False):
         super().__init__()
+        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
         assert len(conv_channels) == 6
 
         kernels = [(10, 1)] * 5 + [(3, 1)]
@@ -112,14 +129,15 @@ class Chen_CNN_RUL(nn.Module):
         for conv in self.convs:
             x = self._conv_time_same(x, conv)
         x = self.pool(x).flatten(1)
-        return self.fc(x).squeeze(-1)
+        y = self.fc(x).squeeze(-1)
+        return self._apply_output_activation(y)
     
 
 # -----------------------------
 # 3) Qin et al. (2023): AttBiGRU
 #    Dynamic weighted federated remaining useful life prediction approach for rotating machinery
 # -----------------------------
-class AttBiGRU(nn.Module):
+class AttBiGRU(nn.Module, OutputActivationMixin):
     """
     Att-BiGRU:
       input window -> BiGRU -> MultiHeadSelfAttention -> flatten -> FC -> RUL
@@ -138,8 +156,11 @@ class AttBiGRU(nn.Module):
         attn_heads: int = 4,
         dropout1: float = 0.3,
         dropout2: float = 0.1,
+        output_clip_0_1: bool = False,
+        output_sigmoid: bool = False,
     ):
         super().__init__()
+        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
         self.ws = ws
         self.feature_dim = input_size
         self.gru_hidden = gru_hidden
@@ -182,7 +203,8 @@ class AttBiGRU(nn.Module):
         y = self.fc2(y)
         y = self.drop2(y)
 
-        return y.squeeze(-1)
+        y = y.squeeze(-1)
+        return self._apply_output_activation(y)
 
 
 # -----------------------------
@@ -251,7 +273,7 @@ class StackedLSTMCell(nn.Module):
 
         return h[-1]  # (B, H)
 
-class LSTM_v2_RUL(nn.Module):
+class LSTM_v2_RUL(nn.Module, OutputActivationMixin):
     """
     RUL model: Gaussian noise + stacked LSTM + dense stack + output.
     Predicts a single RUL value per input window (many-to-one).
@@ -265,8 +287,11 @@ class LSTM_v2_RUL(nn.Module):
         layer_dropout: float = 0.1,
         recurrent_dropout: float = 0.2,
         gaussian_noise: float = 0.01,
+        output_clip_0_1: bool = False,
+        output_sigmoid: bool = False,
     ):
         super().__init__()
+        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
         self.noise = GaussianNoise(std=gaussian_noise)
 
         self.rnn = StackedLSTMCell(
@@ -296,7 +321,7 @@ class LSTM_v2_RUL(nn.Module):
         x = self.noise(x)
         h_last = self.rnn(x)
         y = self.mlp(h_last).squeeze(-1)
-        return y
+        return self._apply_output_activation(y)
 
 
 # -----------------------------
@@ -304,7 +329,7 @@ class LSTM_v2_RUL(nn.Module):
 #    A remaining useful life estimation method based on long short-term memory
 #    and federated learning for electric vehicles in smart cities
 # -----------------------------
-class RNN_RUL(nn.Module):
+class RNN_RUL(nn.Module, OutputActivationMixin):
     """
     Chen et al. (2023) RNN model:
       SimpleRNN layers with units: 64 -> 32 -> 16 -> 8 -> 4 (ReLU),
@@ -313,8 +338,10 @@ class RNN_RUL(nn.Module):
     Input:  x (B, T, 16)  where T=100 in the paper setup (sliding window size).
     Output: y (B, 1)
     """
-    def __init__(self, input_size: int = 16, fc_hidden: int = 40):
+    def __init__(self, input_size: int = 16, fc_hidden: int = 40,
+                 output_clip_0_1: bool = False, output_sigmoid: bool = False):
         super().__init__()
+        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
 
         self.rnn1 = nn.RNN(input_size, 64, nonlinearity="relu", batch_first=True)
         self.rnn2 = nn.RNN(64, 32, nonlinearity="relu", batch_first=True)
@@ -336,7 +363,8 @@ class RNN_RUL(nn.Module):
 
         y = F.relu(self.fc1(h_last))
         y = self.fc2(y)
-        return y.squeeze(-1)
+        y = y.squeeze(-1)
+        return self._apply_output_activation(y)
     
 
 # -----------------------------
@@ -370,7 +398,7 @@ class MLP(nn.Module):
         return self.net(x)
 
 
-class MLP_LSTM_MLP(nn.Module):
+class MLP_LSTM_MLP(nn.Module, OutputActivationMixin):
     """
     MLP-LSTM-MLP (many-to-one):
     - apply a feature MLP at each time step
@@ -393,8 +421,11 @@ class MLP_LSTM_MLP(nn.Module):
         head_hidden: List[int] = [128, 64],
         head_dropout: float = 0.0,
         return_scalar: bool = False, # if True: (B,), else (B,1)
+        output_clip_0_1: bool = False,
+        output_sigmoid: bool = False,
     ):
         super().__init__()
+        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
 
         self.backbone = nn.ModuleDict({
             "feature_mlp": MLP(
@@ -443,6 +474,7 @@ class MLP_LSTM_MLP(nn.Module):
             h_last = out_seq[:, -1, :]
 
         y = self.head(h_last)
+        y = self._apply_output_activation(y)
 
         if self.return_scalar:
             return y.view(B)
