@@ -528,7 +528,7 @@ class TextCNN(nn.Module):
 # ====================================================================================================================
 
 class LSTM(nn.Module, OutputActivationMixin):
-    def __init__(self, input_size, hidden_sizes, output_size, dropout_prob=0.0, output_clip_0_1=False, output_sigmoid=False):
+    def __init__(self, input_size, hidden_sizes, output_size, dropout_prob=0.0, output_sigmoid=False):
         """
         LSTM model for regression.
         
@@ -539,7 +539,7 @@ class LSTM(nn.Module, OutputActivationMixin):
             dropout_prob (float): Dropout probability
         """
         super().__init__()
-        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
+        self._setup_output_activation(output_sigmoid=output_sigmoid)
         self.lstm_layers = nn.ModuleList()
         # Create LSTM layers
         current_input = input_size

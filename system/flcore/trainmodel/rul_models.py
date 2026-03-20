@@ -5,15 +5,12 @@ from typing import List, Optional, Dict
 
 
 class OutputActivationMixin:
-    def _setup_output_activation(self, output_clip_0_1: bool = False, output_sigmoid: bool = False):
-        self.output_clip_0_1 = output_clip_0_1
+    def _setup_output_activation(self, output_sigmoid: bool = False):
         self.output_sigmoid = output_sigmoid
 
     def _apply_output_activation(self, y: torch.Tensor) -> torch.Tensor:
         if self.output_sigmoid:
             y = torch.sigmoid(y)
-        if self.output_clip_0_1:
-            y = torch.clamp(y, min=0.0, max=1.0)
         return y
 
 
@@ -44,9 +41,9 @@ class AFTBlock(nn.Module):
         return rQ * context  # [B,T,D]
 
 class AFTConv2D(nn.Module, OutputActivationMixin):
-    def __init__(self, window_size=30, input_size=25, output_clip_0_1: bool = False, output_sigmoid: bool = False):
+    def __init__(self, window_size=30, input_size=25, output_sigmoid: bool = False):
         super().__init__()
-        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
+        self._setup_output_activation(output_sigmoid=output_sigmoid)
         self.aft = AFTBlock(window_size=window_size, input_size=input_size)
 
         self.conv1 = nn.Conv2d(1, 16, 3, padding=1)
@@ -86,9 +83,9 @@ class Chen_CNN_RUL(nn.Module, OutputActivationMixin):
     NOTE: conv_channels is NOT specified
     """
     def __init__(self, input_size, window_size, conv_channels, fc_dropout=0.0,
-                 output_clip_0_1: bool = False, output_sigmoid: bool = False):
+                 output_sigmoid: bool = False):
         super().__init__()
-        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
+        self._setup_output_activation(output_sigmoid=output_sigmoid)
         assert len(conv_channels) == 6
 
         kernels = [(10, 1)] * 5 + [(3, 1)]
@@ -160,7 +157,7 @@ class AttBiGRU(nn.Module, OutputActivationMixin):
         output_sigmoid: bool = False,
     ):
         super().__init__()
-        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
+        self._setup_output_activation(output_sigmoid=output_sigmoid)
         self.ws = ws
         self.feature_dim = input_size
         self.gru_hidden = gru_hidden
@@ -291,7 +288,7 @@ class LSTM_v2_RUL(nn.Module, OutputActivationMixin):
         output_sigmoid: bool = False,
     ):
         super().__init__()
-        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
+        self._setup_output_activation(output_sigmoid=output_sigmoid)
         self.noise = GaussianNoise(std=gaussian_noise)
 
         self.rnn = StackedLSTMCell(
@@ -339,9 +336,9 @@ class RNN_RUL(nn.Module, OutputActivationMixin):
     Output: y (B, 1)
     """
     def __init__(self, input_size: int = 16, fc_hidden: int = 40,
-                 output_clip_0_1: bool = False, output_sigmoid: bool = False):
+                 output_sigmoid: bool = False):
         super().__init__()
-        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
+        self._setup_output_activation(output_sigmoid=output_sigmoid)
 
         self.rnn1 = nn.RNN(input_size, 64, nonlinearity="relu", batch_first=True)
         self.rnn2 = nn.RNN(64, 32, nonlinearity="relu", batch_first=True)
@@ -425,7 +422,7 @@ class MLP_LSTM_MLP(nn.Module, OutputActivationMixin):
         output_sigmoid: bool = False,
     ):
         super().__init__()
-        self._setup_output_activation(output_clip_0_1=output_clip_0_1, output_sigmoid=output_sigmoid)
+        self._setup_output_activation(output_sigmoid=output_sigmoid)
 
         self.backbone = nn.ModuleDict({
             "feature_mlp": MLP(

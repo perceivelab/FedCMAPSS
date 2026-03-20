@@ -75,6 +75,8 @@ class Client_RUL(Client):
                     x = x.to(self.device)
                 y = y.to(self.device)
                 output = self.model(x).squeeze(-1)
+                if self.args.output_clip_0_1:
+                    output = torch.clamp(output, 0, 1)
 
                 # Update MSE loss (normalized)
                 mse_loss += nn.MSELoss(reduction='sum')(output, y).item()
