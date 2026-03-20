@@ -25,6 +25,10 @@ parameters:
     values: [10]
   no_clip_rul:
     values: [false]
+  output_clip_0_1:
+    values: [false]
+  output_sigmoid:
+    values: [true]
   mu:
     values: [0.1, 0.01, 0.001, 0.0001]
   model:
