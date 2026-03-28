@@ -1,0 +1,35 @@
+program: system/main.py
+name: methods_grid_sigmoid_1
+method: grid
+
+command:
+  - ${env}
+  - ${interpreter}
+  - -u
+  - system/main.py
+  - --wandb-log
+  - --dataset
+  - FedCMAPSSWindow
+  - --data_root
+  - dataset/FedCMAPSS/
+  - ${args}
+
+parameters:
+  task:
+    values: ["A","B","C","D","E"]
+  global_rounds:
+    values: [100]
+  split:
+    values: [0,1,2,3,4,5,6,7,8,9]
+  local_epochs:
+    values: [1,5,10]
+  no_clip_rul:
+    values: [false]
+  output_clip_0_1:
+    values: [false]
+  output_sigmoid:
+    values: [true]
+  model:
+    values: ["LSTM_RUL", "AFT_RUL", "AttBiGRU_RUL", "RNN_RUL", "Chen_CNN_RUL"]
+  algorithm:
+    values: ["FedAvg_RUL", "SCAFFOLD_RUL", "FedDyn_RUL", "FedCross_RUL"]
