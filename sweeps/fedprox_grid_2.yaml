@@ -1,0 +1,37 @@
+program: system/main.py
+name: fedprox_grid_2
+method: grid
+
+command:
+  - ${env}
+  - ${interpreter}
+  - -u
+  - system/main.py
+  - --wandb-log
+  - --dataset
+  - FedCMAPSSWindow
+  - --data_root
+  - dataset/FedCMAPSS/
+  - ${args}
+
+parameters:
+  task:
+    values: ["A","B","C","D","E"]
+  global_rounds:
+    values: [100]
+  split:
+    values: [0,1,2,3,4]
+  local_epochs:
+    values: [10]
+  no_clip_rul:
+    values: [false]
+  output_clip_0_1:
+    values: [false]
+  output_sigmoid:
+    values: [true]
+  mu:
+    values: [1, 10]
+  model:
+    values: ["LSTM_RUL", "AFT_RUL", "AttBiGRU_RUL", "RNN_RUL", "Chen_CNN_RUL"]
+  algorithm:
+    values: ["FedProx_RUL"]

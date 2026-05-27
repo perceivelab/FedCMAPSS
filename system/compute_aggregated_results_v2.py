@@ -4,6 +4,24 @@ import pandas as pd
 from pathlib import Path
 import json
 
+ALGORITHM_ORDER = ["FedAvg", "SCAFFOLD", "FedDyn", "FedCross"]
+ARCHITECTURE_ORDER = ["LSTM", "AFT", "AttBiGRU", "RNN", "CNN"]
+
+ALGORITHM_MAP = {
+    "FedAvg_RUL": "FedAvg",
+    "SCAFFOLD_RUL": "SCAFFOLD",
+    "FedDyn_RUL": "FedDyn",
+    "FedCross_RUL": "FedCross",
+}
+
+MODEL_MAP = {
+    "LSTM_RUL": "LSTM",
+    "AFT_RUL": "AFT",
+    "AttBiGRU_RUL": "AttBiGRU",
+    "RNN_RUL": "RNN",
+    "Chen_CNN_RUL": "CNN",
+}
+
 def build_argparser():
     parser = argparse.ArgumentParser(
         description="Aggregate W&B runs for a project, with optional filters on config keys."
@@ -14,7 +32,7 @@ def build_argparser():
 
     # WandB
     parser.add_argument("--entity", default="bomber-team", help="W&B entity/team")
-    parser.add_argument("--project", default="Rocket-FL", help="W&B project")
+    parser.add_argument("--project", default="Rocket-FL-sigmoid", help="W&B project")
 
     # Basic run selection
     parser.add_argument("--state", default="finished",
@@ -26,7 +44,7 @@ def build_argparser():
 
     # Experiment filters
     parser.add_argument("--algorithm", type=str,
-        choices=["FedAvg_RUL", "SCAFFOLD_RUL", "FedProx_RUL", "FedDyn_RUL", "FedCross_RUL", "Centralized_RUL"],
+        choices=["FedAvg_RUL", "SCAFFOLD_RUL", "FedProx_RUL", "FedDyn_RUL", "FedCross_RUL", "Centralized_RUL", "Local_RUL"],
         default=None,
         help="Filter by config.algorithm (if omitted, no algorithm filter is applied)"
     )
@@ -49,8 +67,12 @@ def build_argparser():
     parser.add_argument("--missing-configs-json", type=str,
         help="Optional JSON file path to backfill missing config.* fields based on config.config_id."
     )
-    parser.add_argument("--group-by", type=str, choices=["architecture"], default=None,
-        help="Optional grouped aggregation mode. 'architecture' groups by algorithm + model + local_epochs."
+    parser.add_argument("--group-by", type=str, choices=["architecture", "algorithm_local_epochs"], default=None,
+        help=(
+            "Optional grouped aggregation mode. "
+            "'architecture' groups by algorithm + model + local_epochs; "
+            "'algorithm_local_epochs' groups by algorithm + local_epochs (averaging across architectures)."
+        )
     )
     return parser
 
@@ -81,14 +103,31 @@ def parse_filters_from_args(args) -> dict:
 def aggregate_runs(runs):
     rows = []
     for r in runs:
+        try:
+            config_dict = dict(r.config)
+        except Exception as exc:
+            config_dict = dict(getattr(r, "_attrs", {}).get("config", {}) or {})
+            print(f"[WARN] Could not read run.config for run {getattr(r, 'id', 'unknown')}: {exc}. Using raw attrs fallback.")
+
+        try:
+            summary_dict = dict(r.summary)
+        except Exception as exc:
+            summary_dict = dict(getattr(r, "_attrs", {}).get("summaryMetrics", {}) or {})
+            print(f"[WARN] Could not read run.summary for run {getattr(r, 'id', 'unknown')}: {exc}. Using raw attrs fallback.")
+
+        if not isinstance(config_dict, dict):
+            config_dict = {}
+        if not isinstance(summary_dict, dict):
+            summary_dict = {}
+
         rows.append({
             "id": r.id,
             "name": r.name,
             "state": r.state,
             "created_at": r.created_at,
             "tags": list(r.tags),
-            **{f"config.{k}": v for k, v in dict(r.config).items()},
-            **{f"summary.{k}": v for k, v in dict(r.summary).items()},
+            **{f"config.{k}": v for k, v in config_dict.items()},
+            **{f"summary.{k}": v for k, v in summary_dict.items()},
         })
     return pd.DataFrame(rows)
 
@@ -115,6 +154,7 @@ def backfill_configs_from_json(df: pd.DataFrame, json_path: str, config_id_base:
 
     with open(path, "r", encoding="utf-8") as f:
         cfg_list = json.load(f)
+
 
     if not isinstance(cfg_list, list) or len(cfg_list) == 0:
         print("[WARN] Empty or invalid JSON format (expected a non-empty list). Backfill skipped.")
@@ -225,8 +265,12 @@ def compute_grouped_summary_stats(df, group_cols, metric_cols):
         print("[WARN] None of the specified metric columns found in DataFrame. Grouped stats cannot be computed.")
         return None
 
+    work = df.copy()
+    for c in group_cols:
+        work[c] = work[c].apply(_to_hashable_scalar)
+
     grouped = (
-        df.groupby(group_cols)[valid_metrics]
+        work.groupby(group_cols)[valid_metrics]
         .agg(["count", "mean", "std"])
         .reset_index()
     )
@@ -241,21 +285,283 @@ def compute_grouped_summary_stats(df, group_cols, metric_cols):
 
     return grouped
 
+def compute_centralized_model_split_stats(df: pd.DataFrame, metric_cols):
+    """
+    Centralized case: group by model by averaging over splits first,
+    then compute count/mean/std across split-level values.
+    """
+    required_group_cols = ["config.model"]
+    missing_groups = [c for c in required_group_cols if c not in df.columns]
+    if missing_groups:
+        print(f"[WARN] Missing required columns for centralized aggregation: {missing_groups}")
+        return None
+
+    valid_metrics = [m for m in metric_cols if m in df.columns]
+    if not valid_metrics:
+        print("[WARN] No valid metric columns found for centralized aggregation.")
+        return None
+
+    def _to_hashable_scalar(val):
+        if isinstance(val, dict):
+            for k in ["value", "name", "id", "model", "split"]:
+                if k in val and not isinstance(val[k], (dict, list, tuple, set)):
+                    return val[k]
+            try:
+                return json.dumps(val, sort_keys=True)
+            except Exception:
+                return str(val)
+        if isinstance(val, (list, tuple, set)):
+            try:
+                return json.dumps(list(val), sort_keys=True)
+            except Exception:
+                return str(val)
+        return val
+
+    work = df.copy()
+    work["config.model"] = work["config.model"].apply(_to_hashable_scalar)
+
+    split_col = "config.split" if "config.split" in df.columns else None
+
+    if split_col is not None:
+        work[split_col] = work[split_col].apply(_to_hashable_scalar)
+        per_split = (
+            work.groupby(["config.model", split_col], dropna=False)[valid_metrics]
+            .mean()
+            .reset_index()
+        )
+    else:
+        print("[WARN] 'config.split' not found: using runs directly (no split-level pre-aggregation).")
+        per_split = work[["config.model"] + valid_metrics].copy()
+
+    grouped = (
+        per_split.groupby(["config.model"])[valid_metrics]
+        .agg(["count", "mean", "std"])
+        .reset_index()
+    )
+
+    grouped.columns = [
+        "_".join([str(x) for x in col if x]) if isinstance(col, tuple) else col
+        for col in grouped.columns
+    ]
+
+    return grouped
+
+def compute_centralized_task_architecture_tables(df: pd.DataFrame):
+    """
+    Centralized case across all tasks:
+    - average metrics per (task, architecture, split)
+    - then compute mean/std across splits per (task, architecture)
+    - return a pivot table: rows=task, cols=architecture, cell='RMSE mean ± std | NASA mean ± std'
+    """
+    required_cols = [
+        "config.task",
+        "config.model",
+        "summary.global/test_rmse",
+        "summary.global/test_nasa_score",
+    ]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        print(f"[WARN] Missing required columns for centralized task table: {missing}")
+        return None, None
+
+    def _to_hashable_scalar(val):
+        if isinstance(val, dict):
+            for k in ["value", "name", "id", "model", "split", "task"]:
+                if k in val and not isinstance(val[k], (dict, list, tuple, set)):
+                    return val[k]
+            try:
+                return json.dumps(val, sort_keys=True)
+            except Exception:
+                return str(val)
+        if isinstance(val, (list, tuple, set)):
+            try:
+                return json.dumps(list(val), sort_keys=True)
+            except Exception:
+                return str(val)
+        return val
+
+    work = df.copy()
+    work["task"] = work["config.task"].apply(_to_hashable_scalar)
+    work["model_raw"] = work["config.model"].apply(_to_hashable_scalar)
+    work["architecture"] = work["model_raw"].map(MODEL_MAP).fillna(work["model_raw"])
+    work["summary.global/test_rmse"] = pd.to_numeric(work["summary.global/test_rmse"], errors="coerce")
+    work["summary.global/test_nasa_score"] = pd.to_numeric(work["summary.global/test_nasa_score"], errors="coerce")
+
+    split_col = "config.split" if "config.split" in work.columns else None
+    if split_col is not None:
+        work[split_col] = work[split_col].apply(_to_hashable_scalar)
+        per_split = (
+            work.groupby(["task", "architecture", split_col], dropna=False)[
+                ["summary.global/test_rmse", "summary.global/test_nasa_score"]
+            ]
+            .mean()
+            .reset_index()
+        )
+    else:
+        print("[WARN] 'config.split' not found: using runs directly (no split-level pre-aggregation).")
+        per_split = work[["task", "architecture", "summary.global/test_rmse", "summary.global/test_nasa_score"]].copy()
+
+    agg = (
+        per_split.groupby(["task", "architecture"])[["summary.global/test_rmse", "summary.global/test_nasa_score"]]
+        .agg(["count", "mean", "std"])
+        .reset_index()
+    )
+
+    agg.columns = [
+        "_".join([str(x) for x in col if x]) if isinstance(col, tuple) else col
+        for col in agg.columns
+    ]
+
+    task_order = sorted(agg["task"].dropna().astype(str).unique().tolist())
+    table = pd.DataFrame(index=task_order, columns=ARCHITECTURE_ORDER, dtype=object)
+
+    for _, row in agg.iterrows():
+        task = str(row["task"])
+        arch = row["architecture"]
+        if arch not in table.columns:
+            table[arch] = "-"
+        rmse_text = _fmt_mean_std(
+            row.get("summary.global/test_rmse_mean"),
+            row.get("summary.global/test_rmse_std"),
+        )
+        nasa_text = _fmt_mean_std(
+            row.get("summary.global/test_nasa_score_mean"),
+            row.get("summary.global/test_nasa_score_std"),
+        )
+        table.loc[task, arch] = f"{rmse_text} | {nasa_text}"
+
+    table = table.fillna("-")
+    return table, agg
+
+def _fmt_mean_std(mean_val, std_val, decimals=4):
+    if pd.isna(mean_val):
+        return "-"
+    if pd.isna(std_val):
+        return f"{mean_val:.{decimals}f} ± n/a"
+    return f"{mean_val:.{decimals}f} ± {std_val:.{decimals}f}"
+
+def _to_hashable_scalar(val):
+    if isinstance(val, dict):
+        for k in ["value", "name", "id", "model", "split", "task", "algorithm"]:
+            if k in val and not isinstance(val[k], (dict, list, tuple, set)):
+                return val[k]
+        try:
+            return json.dumps(val, sort_keys=True)
+        except Exception:
+            return str(val)
+    if isinstance(val, (list, tuple, set)):
+        try:
+            return json.dumps(list(val), sort_keys=True)
+        except Exception:
+            return str(val)
+    return val
+
+def compute_task_pivot_tables(df: pd.DataFrame):
+    required_cols = [
+        "config.algorithm",
+        "config.model",
+        "config.local_epochs",
+        "summary.global/test_rmse",
+        "summary.global/test_nasa_score",
+    ]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        print(f"[WARN] Missing required columns for task pivot tables: {missing}")
+        return {}, None
+
+    work = df.copy()
+    work["algorithm"] = work["config.algorithm"].map(ALGORITHM_MAP)
+    work["architecture"] = work["config.model"].map(MODEL_MAP)
+    work["local_epochs"] = pd.to_numeric(work["config.local_epochs"], errors="coerce")
+
+    work["summary.global/test_rmse"] = pd.to_numeric(work["summary.global/test_rmse"], errors="coerce")
+    work["summary.global/test_nasa_score"] = pd.to_numeric(work["summary.global/test_nasa_score"], errors="coerce")
+
+    work = work.dropna(subset=["algorithm", "architecture", "local_epochs"])
+
+    split_col = "config.split" if "config.split" in work.columns else None
+    if split_col is not None:
+        per_split = (
+            work.groupby(["algorithm", "architecture", "local_epochs", split_col], dropna=False)[
+                ["summary.global/test_rmse", "summary.global/test_nasa_score"]
+            ]
+            .mean()
+            .reset_index()
+        )
+    else:
+        print("[WARN] 'config.split' not found: using runs directly (no split-level pre-aggregation).")
+        per_split = work[["algorithm", "architecture", "local_epochs", "summary.global/test_rmse", "summary.global/test_nasa_score"]].copy()
+
+    agg = (
+        per_split.groupby(["algorithm", "architecture", "local_epochs"])[
+            ["summary.global/test_rmse", "summary.global/test_nasa_score"]
+        ]
+        .agg(["mean", "std"])
+        .reset_index()
+    )
+
+    agg.columns = [
+        "_".join([str(x) for x in col if x]) if isinstance(col, tuple) else col
+        for col in agg.columns
+    ]
+
+    local_epoch_values = sorted(set(agg["local_epochs"].dropna().astype(int).tolist()))
+    tables = {}
+
+    for le in local_epoch_values:
+        sub = agg[agg["local_epochs"] == le].copy()
+
+        table = pd.DataFrame(index=ARCHITECTURE_ORDER, columns=ALGORITHM_ORDER, dtype=object)
+
+        for _, row in sub.iterrows():
+            alg = row["algorithm"]
+            arch = row["architecture"]
+            if alg not in ALGORITHM_ORDER or arch not in ARCHITECTURE_ORDER:
+                continue
+
+            rmse_text = _fmt_mean_std(
+                row.get("summary.global/test_rmse_mean"),
+                row.get("summary.global/test_rmse_std"),
+            )
+            nasa_text = _fmt_mean_std(
+                row.get("summary.global/test_nasa_score_mean"),
+                row.get("summary.global/test_nasa_score_std"),
+            )
+            table.loc[arch, alg] = f"{rmse_text} | {nasa_text}"
+
+        table = table.fillna("-")
+        tables[int(le)] = table
+
+    return tables, agg
+
 def get_metrics_at_steps(run, steps, metric_keys):
     """
-    Returns dict: {step: {metric: value, ...}, ...} for exact _step matches.
+    Returns dict: {step: {metric: value, ...}, ...} for exact global-round matches.
+    Priority for round key in history row:
+      1) round
+      2) global_round
+      3) global/round
+      4) _step (fallback only)
     metric_keys are history metric names (WITHOUT 'summary.').
     """
-    steps = set(steps)
-    keys = ["_step"] + metric_keys
+    steps = set(int(s) for s in steps)
+    keys = ["round", "_step"] + metric_keys
     out = {}
 
     for row in run.scan_history(keys=keys):
-        s = row.get("_step")
+        s = None
+        for key in ["round", "global_round", "global/round", "_step"]:
+            val = row.get(key)
+            if val is None or pd.isna(val):
+                continue
+            try:
+                s = int(val)
+                break
+            except Exception:
+                continue
+
         if s in steps:
             out[s] = {k: row.get(k) for k in metric_keys}
-            if len(out) == len(steps):
-                break
 
     return out
 
@@ -498,6 +804,7 @@ def backfill_configs_from_json(
 
 def main():
     args = build_argparser().parse_args()
+    compact_out_df = None
 
     print("Connecting to W&B")
     api = wandb.Api()
@@ -535,7 +842,7 @@ def main():
     else:
         print("\n[INFO] --missing-configs-json not provided. Backfill skipped.")
 
-    metrics = ["summary.global/test_nasa_score", "summary.global/test_rmse"]
+    metrics = ["summary.global/test_rmse", "summary.global/test_nasa_score"]
     for m in metrics:
         if m in df.columns:
             df[m] = pd.to_numeric(df[m], errors="coerce")
@@ -549,7 +856,7 @@ def main():
     else:
         print("\n[WARN] Summary metrics not found in df columns.")
 
-    if args.steps and args.algorithm is None and args.model is None:
+    if args.steps and args.algorithm is None and args.model is None and not (args.task is not None and args.local_epochs is not None):
         group_cols = ["config.algorithm"]
 
         grouped_stats = compute_grouped_summary_stats(
@@ -571,19 +878,48 @@ def main():
                 grouped_stats.to_csv(grouped_path, index=False)
                 print(f"\nSaved grouped stats CSV to: {grouped_path}")
 
+    elif args.algorithm in {"Centralized_RUL", "Local_RUL"} and args.task is None and not args.steps:
+        table, agg_long = compute_centralized_task_architecture_tables(df)
+
+        if table is None:
+            print(f"\n[WARN] No task table generated for {args.algorithm}.")
+        else:
+            print(f"\n=== {args.algorithm} table by task x architecture (split-averaged) ===")
+            print("Cell format: RMSE mean ± std | NASA mean ± std")
+            print(table)
+
+            if args.out:
+                table_path = (
+                    args.out.replace(".csv", f"_{args.algorithm}_task_architecture_table.csv")
+                    if args.out.endswith(".csv")
+                    else args.out + f"_{args.algorithm}_task_architecture_table.csv"
+                )
+                table.to_csv(table_path, index=True)
+                print(f"Saved task table CSV to: {table_path}")
+
+                agg_path = (
+                    args.out.replace(".csv", f"_{args.algorithm}_task_architecture_long.csv")
+                    if args.out.endswith(".csv")
+                    else args.out + f"_{args.algorithm}_task_architecture_long.csv"
+                )
+                agg_long.to_csv(agg_path, index=False)
+                print(f"Saved task long CSV to: {agg_path}")
+
     elif args.group_by == "architecture" and not args.steps:
-        if args.algorithm == "Centralized_RUL":
-            group_cols = ["config.model"]
-            grouped_title = "\n=== Grouped summary stats by architecture/model (Centralized_RUL) (count/mean/std) ==="
+        if args.algorithm in {"Centralized_RUL", "Local_RUL"}:
+            grouped_title = f"\n=== Grouped summary stats by architecture/model ({args.algorithm}) (count/mean/std) ==="
+            grouped_stats = compute_centralized_model_split_stats(
+                df=df,
+                metric_cols=available_metrics,
+            )
         else:
             group_cols = ["config.algorithm", "config.model", "config.local_epochs"]
             grouped_title = "\n=== Grouped summary stats by algorithm + model + local_epochs (count/mean/std) ==="
-
-        grouped_stats = compute_grouped_summary_stats(
-            df=df,
-            group_cols=group_cols,
-            metric_cols=available_metrics
-        )
+            grouped_stats = compute_grouped_summary_stats(
+                df=df,
+                group_cols=group_cols,
+                metric_cols=available_metrics
+            )
 
         if grouped_stats is not None:
             print(grouped_title)
@@ -597,6 +933,59 @@ def main():
                 )
                 grouped_stats.to_csv(grouped_path, index=False)
                 print(f"\nSaved grouped stats CSV to: {grouped_path}")
+
+    elif args.group_by == "algorithm_local_epochs" and not args.steps:
+        group_cols = ["config.algorithm", "config.local_epochs"]
+
+        grouped_stats = compute_grouped_summary_stats(
+            df=df,
+            group_cols=group_cols,
+            metric_cols=available_metrics
+        )
+
+        if grouped_stats is not None:
+            print("\n=== Grouped summary stats by algorithm + local_epochs (count/mean/std, averaged across architectures) ===")
+            print(grouped_stats)
+
+            if args.out:
+                grouped_path = (
+                    args.out.replace(".csv", "_grouped_by_algorithm_local_epochs.csv")
+                    if args.out.endswith(".csv")
+                    else args.out + "_grouped_by_algorithm_local_epochs.csv"
+                )
+                grouped_stats.to_csv(grouped_path, index=False)
+                print(f"\nSaved grouped stats CSV to: {grouped_path}")
+
+    elif args.task is not None and args.algorithm is None and args.model is None and args.local_epochs is None and not args.steps:
+        pivot_tables, agg_long = compute_task_pivot_tables(df)
+
+        if not pivot_tables:
+            print("\n[WARN] No pivot tables generated for task-only mode.")
+        else:
+            print("\n=== Task-only tables by local_epochs (rows=architecture, cols=algorithm) ===")
+            print("Cell format: RMSE mean ± std | NASA mean ± std")
+            for le in sorted(pivot_tables.keys()):
+                print(f"\n--- local_epochs = {le} ---")
+                print(pivot_tables[le])
+
+            if args.out:
+                for le, table in pivot_tables.items():
+                    path = (
+                        args.out.replace(".csv", f"_local_epochs_{le}_pivot.csv")
+                        if args.out.endswith(".csv")
+                        else args.out + f"_local_epochs_{le}_pivot.csv"
+                    )
+                    table.to_csv(path, index=True)
+                    print(f"Saved task pivot table CSV to: {path}")
+
+                agg_path = (
+                    args.out.replace(".csv", "_task_agg_long.csv")
+                    if args.out.endswith(".csv")
+                    else args.out + "_task_agg_long.csv"
+                )
+                if agg_long is not None:
+                    agg_long.to_csv(agg_path, index=False)
+                    print(f"Saved task long aggregation CSV to: {agg_path}")
 
     elif args.algorithm is None and args.model is None and args.local_epochs is None:
         group_cols = ["config.algorithm", "config.local_epochs"]
@@ -638,9 +1027,71 @@ def main():
         print("\n=== Aggregated stats by step (count/mean/std) ===")
         print(step_stats)
 
-        if args.algorithm is None and args.model is None and "config.algorithm" in df.columns:
+        if (
+            args.task is not None
+            and args.local_epochs is not None
+            and args.algorithm is None
+            and args.model is None
+            and "config.algorithm" in df.columns
+        ):
+            meta_cols = ["id", "config.algorithm", "config.model"]
+            if "config.split" in df.columns:
+                meta_cols.append("config.split")
+
+            run_meta = df[meta_cols].drop_duplicates(subset=["id"]).rename(columns={"id": "run_id"})
+            df_steps_meta = df_steps.merge(run_meta, on="run_id", how="left")
+
+            df_steps_meta["config.algorithm"] = df_steps_meta["config.algorithm"].apply(_to_hashable_scalar)
+            df_steps_meta["config.model"] = df_steps_meta["config.model"].apply(_to_hashable_scalar)
+            if "config.split" in df_steps_meta.columns:
+                df_steps_meta["config.split"] = df_steps_meta["config.split"].apply(_to_hashable_scalar)
+            else:
+                df_steps_meta["config.split"] = "all"
+
+            # First average across runs within the same (step, algorithm, architecture, split)
+            per_arch_split = (
+                df_steps_meta.groupby(["step", "config.algorithm", "config.model", "config.split"])[hist_metrics]
+                .mean()
+                .reset_index()
+            )
+
+            # Then aggregate by (step, algorithm), averaging across architectures and splits
+            step_stats_by_algo_avg_arch_split = (
+                per_arch_split.groupby(["step", "config.algorithm"])[hist_metrics]
+                .agg(["count", "mean", "std"])
+                .reset_index()
+            )
+
+            flat_cols = []
+            for col in step_stats_by_algo_avg_arch_split.columns:
+                if isinstance(col, tuple):
+                    flat_cols.append("_".join([str(x) for x in col if x]))
+                else:
+                    flat_cols.append(col)
+            step_stats_by_algo_avg_arch_split.columns = flat_cols
+
+            compact_cols = [
+                "step",
+                "config.algorithm",
+                "global/test_rmse_mean",
+                "global/test_rmse_std",
+                "global/test_nasa_score_mean",
+                "global/test_nasa_score_std",
+            ]
+            compact_out_df = step_stats_by_algo_avg_arch_split[[c for c in compact_cols if c in step_stats_by_algo_avg_arch_split.columns]].copy()
+
+            print("\n=== Aggregated step-wise stats by algorithm (averaged across architecture and split) ===")
+            print(step_stats_by_algo_avg_arch_split)
+
+        if (
+            args.algorithm is None
+            and args.model is None
+            and "config.algorithm" in df.columns
+            and not (args.task is not None and args.local_epochs is not None)
+        ):
             run_meta = df[["id", "config.algorithm"]].drop_duplicates(subset=["id"]).rename(columns={"id": "run_id"})
             df_steps_with_algo = df_steps.merge(run_meta, on="run_id", how="left")
+            df_steps_with_algo["config.algorithm"] = df_steps_with_algo["config.algorithm"].apply(_to_hashable_scalar)
 
             step_stats_by_algo = (
                 df_steps_with_algo.groupby(["step", "config.algorithm"])[hist_metrics]
@@ -664,7 +1115,30 @@ def main():
             step_stats.to_csv(step_stats_path, index=False)
             print(f"\nSaved step-wise stats CSV to: {step_stats_path}")
 
-            if args.algorithm is None and args.model is None and "config.algorithm" in df.columns:
+            if (
+                args.task is not None
+                and args.local_epochs is not None
+                and args.algorithm is None
+                and args.model is None
+                and "config.algorithm" in df.columns
+            ):
+                step_stats_avg_arch_split_path = (
+                    args.out.replace(
+                        ".csv",
+                        f"_step_stats_by_algorithm_avg_arch_split_task_{args.task}_le_{args.local_epochs}.csv",
+                    )
+                    if args.out.endswith(".csv")
+                    else args.out + f"_step_stats_by_algorithm_avg_arch_split_task_{args.task}_le_{args.local_epochs}.csv"
+                )
+                step_stats_by_algo_avg_arch_split.to_csv(step_stats_avg_arch_split_path, index=False)
+                print(f"\nSaved step-wise stats by algorithm (avg arch+split) CSV to: {step_stats_avg_arch_split_path}")
+
+            if (
+                args.algorithm is None
+                and args.model is None
+                and "config.algorithm" in df.columns
+                and not (args.task is not None and args.local_epochs is not None)
+            ):
                 step_stats_algo_path = (
                     args.out.replace(".csv", f"_step_stats_by_algorithm_task_{args.task}.csv")
                     if args.out.endswith(".csv")
@@ -674,8 +1148,12 @@ def main():
                 print(f"\nSaved step-wise stats by algorithm CSV to: {step_stats_algo_path}")
 
     if args.out:
-        df.to_csv(args.out, index=False)
-        print(f"\nSaved CSV to: {args.out}")
+        if compact_out_df is not None:
+            compact_out_df.to_csv(args.out, index=False)
+            print(f"\nSaved compact CSV (RMSE/NASA only) to: {args.out}")
+        else:
+            df.to_csv(args.out, index=False)
+            print(f"\nSaved CSV to: {args.out}")
 
 # /home/asorrenti/git/RocketFL/system/compute_aggregated_results.py --task A --global_rounds 100 --local_epochs 10 --steps 5 10 15 20 25 30 35 40 45 50 55 60 65 70 75 80 85 90 95 100 --missing-configs-json /home/asorrenti/git/RocketFL/sweeps/missing_configs.json --out 1
 # compute_aggregated_results.py --task E --global_rounds 100 --missing-configs-json /home/asorrenti/git/RocketFL/sweeps/missing_configs.json --out 1
